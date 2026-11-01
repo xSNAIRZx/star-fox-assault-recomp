@@ -1,0 +1,5 @@
+object_base: orig/GF7E01
+object: sys/main.dol
+symbols: config/GF7E01/main-symbols.txt
+splits: config/GF7E01/main-splits.txt
+mw_comment_version: 11

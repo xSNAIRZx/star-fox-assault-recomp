@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "platform": "windows-x64",
+  "tools": [
+    {
+      "id": "llvm-mingw",
+      "version": "20261020",
+      "url": "https://github.com/mstorsjo/llvm-mingw/releases/download/20261020/llvm-mingw-20261020-ucrt-x86_64.zip",
+      "sha256": "fd5462b7f5d93b2ff981fcd3f9c7e427e47f3203c64ea91c27bcc444eebd74cd",
+      "archive_root": "llvm-mingw-20261020-ucrt-x86_64",
+      "executable": "bin/x86_64-w64-mingw32-clang.exe",
+      "source": "https://github.com/mstorsjo/llvm-mingw/releases/tag/20261020"
+    },
+    {
+      "id": "cmake",
+      "version": "4.4.5",
+      "url": "https://github.com/Kitware/CMake/releases/download/v4.4.5/cmake-4.4.5-windows-x86_64.zip",
+      "sha256": "326c826486d46a23cf9d5a1c9ee3a567d427bdd02c4a34071937a2a675cff004",
+      "archive_root": "cmake-4.4.5-windows-x86_64",
+      "executable": "bin/cmake.exe",
+      "source": "https://cmake.org/download/"
+    },
+    {
+      "id": "ninja",
+      "version": "1.13.2",
+      "url": "https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip",
+      "sha256": "07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65",
+      "archive_root": "",
+      "executable": "ninja.exe",
+      "source": "https://github.com/ninja-build/ninja/releases/tag/v1.13.2"
+    },
+    {
+      "id": "python",
+      "version": "3.13.17",
+      "url": "https://www.python.org/ftp/python/3.13.17/python-3.13.17-amd64.zip",
+      "sha256": "b26ca4b4ee51e157836049934d2b8eabd55939be296f3130254251b6df96ec2f",
+      "archive_root": "",
+      "executable": "python.exe",
+      "source": "https://www.python.org/ftp/python/3.13.17/windows-3.13.17.json"
+    }
+  ]
+}

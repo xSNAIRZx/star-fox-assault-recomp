@@ -1,0 +1,1 @@
+Portable mode: settings and generated files stay under this folder's user-data directory.

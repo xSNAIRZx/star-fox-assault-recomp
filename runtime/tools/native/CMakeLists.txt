@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.20)
+project(assault_image_tool LANGUAGES CXX)
+
+add_executable(assault-image-tool main.cpp ../../runtime/disc_image.cpp)
+target_include_directories(assault-image-tool PRIVATE ../../runtime)
+target_compile_features(assault-image-tool PRIVATE cxx_std_20)
+set_target_properties(assault-image-tool PROPERTIES CXX_STANDARD_REQUIRED ON)
+
+if(MSVC)
+  set_property(TARGET assault-image-tool PROPERTY MSVC_RUNTIME_LIBRARY
+    "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  target_compile_definitions(assault-image-tool PRIVATE _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
+  target_compile_options(assault-image-tool PRIVATE /W4 /WX /permissive-)
+  target_link_options(assault-image-tool PRIVATE /INCREMENTAL:NO)
+elseif(MINGW)
+  target_compile_options(assault-image-tool PRIVATE -Wall -Wextra -Werror)
+  target_link_options(assault-image-tool PRIVATE -municode -static -static-libgcc -static-libstdc++)
+else()
+  target_compile_options(assault-image-tool PRIVATE -Wall -Wextra -Werror)
+endif()
