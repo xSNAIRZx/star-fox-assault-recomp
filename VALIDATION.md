@@ -23,6 +23,14 @@ compilation succeeded, and `git diff --check` passed; no gameplay or launcher GU
 | Full-game compatibility, mission completion and later missions | Not established |
 | First-boss visibility and invalid-current-thread-pointer crash | Unresolved |
 
+## rc.3 package checks — 2026-11-03
+
+The branded rc.3 launcher and source package passed archive creation, extraction, portable forward-slash
+path, per-file SHA-256, forbidden-content and asset-allowlist checks. The package's PowerShell scripts
+parsed, its C# bootstrap compiled, and the regenerated icon contains seven sizes. The launcher was not
+opened, and the native game build and gameplay were not run. The empty-cache native build and
+bounded-startup evidence below is for rc.2 only.
+
 ## Checks passed — 2026-11-01, rc.2
 
 The rc.2 source package was extracted into a Unicode-named folder with no existing

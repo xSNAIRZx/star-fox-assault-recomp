@@ -1,15 +1,25 @@
-# 0.2.0-rc.2 - Windows x64 source-build release candidate
+# 0.2.0-rc.3 - Peregrine Forge Windows x64 source-build release candidate
 
-## Unreleased — diagnostics after rc.2
+## Release summary
 
-No new package accompanies this work, and rc.2 remains the current experimental candidate. The
-two reported gameplay defects are still unresolved: no build of the game could be run here, so
-nothing below is a fix.
+This is a complete shareable Windows source package, but it is still an experimental prerelease
+and not a stable full-game release. It adds the Peregrine Forge name, matching PF icon, updated
+credits and local-file ignore rules. The package contains source and host tools; each recipient
+supplies their own supported USA GF7E01 game image and builds locally.
 
-The launcher now uses **Peregrine Forge** as its brand while retaining **Star Fox Assault Recomp**
-as the project and executable name. The launcher now uses a matching PF monogram icon. No
-trademark registration is claimed; this is a source branding update and
-does not change the current release package.
+The rc.2 build and bounded-startup evidence below was not repeated for rc.3. The first-boss
+visibility issue and current-thread-pointer crash remain unresolved; mission completion, later
+missions, complete audio fidelity and all physical controllers remain unverified. No trademark
+registration or official affiliation is claimed.
+
+The rc.3 ZIP contains 243 payload files, uses portable forward-slash paths, and passed extraction,
+per-file SHA-256, content-safety, asset-allowlist and PowerShell parser checks. The adjacent `.zip.sha256`
+sidecar records its archive checksum.
+
+## rc.2 diagnostics and validation baseline
+
+The launcher branding and code-source changes are described above. The analysis below is retained
+as earlier evidence for the build pipeline and runtime; it does not establish full-game compatibility.
 
 The current-thread crash trace now has an explanation to test. `0x80136C60` lies inside
 `fn_80136C44`, and the reported address `0x3F0002C8` is `0x2C8` past `0x3F000000` — the float

@@ -2,7 +2,7 @@ param(
   [switch]$IncludeNativePrototype,
   [string]$NativePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'user-data\verification\desktop-release\Release\assault.exe'),
   [string]$HostToolPath = (Join-Path $PSScriptRoot 'native\assault-image-tool.exe'),
-  [string]$ReleaseVersion = '0.2.0-rc.2',
+  [string]$ReleaseVersion = '0.2.0-rc.3',
   [string]$ArchiveName = '',
   [string]$Stamp = (Get-Date -Format 'yyyyMMdd-HHmmss')
 )
@@ -81,6 +81,26 @@ function Add-SourceTree([string]$relativeRoot) {
 
 function Get-PackageRelativeFiles([string]$root) {
   return @(Get-ChildItem -LiteralPath $root -Recurse -File -Force | ForEach-Object { $_.FullName.Substring(([IO.Path]::GetFullPath($root).TrimEnd('\') + '\').Length).Replace('\','/') } | Sort-Object)
+}
+
+function New-PortableZipArchive([string]$sourceRoot,[string]$archivePath) {
+  $rootPrefix = [IO.Path]::GetFullPath($sourceRoot).TrimEnd('\') + '\'
+  $archiveStream = [IO.File]::Open($archivePath,[IO.FileMode]::CreateNew,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+  $archive = $null
+  try {
+    $archive = [IO.Compression.ZipArchive]::new($archiveStream,[IO.Compression.ZipArchiveMode]::Create,$false)
+    foreach ($file in Get-ChildItem -LiteralPath $sourceRoot -Recurse -File -Force | Sort-Object FullName) {
+      $relative = $file.FullName.Substring($rootPrefix.Length).Replace('\','/')
+      $entry = $archive.CreateEntry($relative,[IO.Compression.CompressionLevel]::Optimal)
+      $entry.LastWriteTime = [DateTimeOffset]::new($file.LastWriteTime)
+      $inputStream = [IO.File]::OpenRead($file.FullName)
+      $entryStream = $entry.Open()
+      try { $inputStream.CopyTo($entryStream) }
+      finally { $entryStream.Dispose(); $inputStream.Dispose() }
+    }
+  } finally {
+    if ($archive) { $archive.Dispose() } else { $archiveStream.Dispose() }
+  }
 }
 
 try {
@@ -171,7 +191,13 @@ try {
   }
   Set-Content -LiteralPath (Join-Path $stage $manifestPath) -Value $manifest -Encoding ascii
 
-  [IO.Compression.ZipFile]::CreateFromDirectory($stage,$zipPath,[IO.Compression.CompressionLevel]::Optimal,$false)
+  New-PortableZipArchive $stage $zipPath
+  $archiveCheck = [IO.Compression.ZipFile]::OpenRead($zipPath)
+  try {
+    foreach ($entry in $archiveCheck.Entries) {
+      if ($entry.FullName.Contains('\')) { throw "Archive entry uses a Windows path separator: $($entry.FullName)" }
+    }
+  } finally { $archiveCheck.Dispose() }
   [IO.Directory]::CreateDirectory($verify) | Out-Null
   [IO.Compression.ZipFile]::ExtractToDirectory($zipPath,$verify)
 

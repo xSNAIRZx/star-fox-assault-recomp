@@ -10,7 +10,7 @@ An experimental Windows x64 native recompilation project for the USA GameCube re
 
 *Custom project cover based on the launcher's hangar artwork. This is fan-project artwork, not the original retail box cover.*
 
-[Download the experimental Windows build](https://github.com/xSNAIRZx/star-fox-assault-recomp/releases/tag/v0.2.0-rc.2) · [Planned updates](ROADMAP.md) · [Validation and known issues](VALIDATION.md)
+[Download the experimental Windows build](https://github.com/xSNAIRZx/star-fox-assault-recomp/releases/tag/v0.2.0-rc.3) · [Planned updates](ROADMAP.md) · [Validation and known issues](VALIDATION.md)
 
 ## Launcher preview
 
@@ -31,7 +31,7 @@ The distribution contains source, analysis metadata, original launcher artwork, 
 
 ## Experimental status
 
-The current source candidate is **0.2.0-rc.2**. Its packaged **Import & Build** flow completed from an empty portable cache using a plain ISO whose path included spaces and an apostrophe. It downloaded and verified the pinned tools, built SDL, compiled the native game in about 150 seconds, then reached the readable safety screen in a bounded startup. This verifies setup and startup on the tested Windows machine, not full-game compatibility.
+The current source candidate is **0.2.0-rc.3**. Its package archive passed extraction, payload-hash, forbidden-content, asset-allowlist and PowerShell parser checks. The empty-cache **Import & Build** and bounded startup evidence below is from rc.2; those checks were not repeated for rc.3. This evidence verifies setup and limited startup only, not full-game compatibility.
 
 First-mission flight, readable menus and saved-profile persistence have been tested. **The disappearing first boss and a current-thread-pointer crash remain unresolved.** Mission completion, later missions, complete audio fidelity and all physical controllers have not been verified. This release candidate is suitable for testing; it is not a stable full-game release.
 

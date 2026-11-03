@@ -1518,7 +1518,7 @@ function Build-AboutPage {
   $pageWidth=Get-ContentPageWidth
   $card=New-Card 30 112 $pageWidth 500
   $heading=New-Label $script:launcherBrand.ToUpperInvariant() 22 $true $script:colors.cyan; $heading.Location=New-Object Drawing.Point(25,24); $card.Controls.Add($heading)
-  $release=New-Label 'Version 0.2.0-rc.2 · native build prototype · validation is ongoing' 11 $true $script:colors.text; $release.Location=New-Object Drawing.Point(27,68); $card.Controls.Add($release)
+  $release=New-Label 'Version 0.2.0-rc.3 · native build prototype · validation is ongoing' 11 $true $script:colors.text; $release.Location=New-Object Drawing.Point(27,68); $card.Controls.Add($release)
   $body=New-Label ("{0} is the launcher brand for {1}, an independent fan project. It can inspect your own USA ISO/CISO, prepare its portable build tools, compile the native application, and keep launcher settings and runtime data in this project folder. Your game image is read in place and is never copied, patched, or modified." -f $script:launcherBrand,$script:projectTitle) 10 $false $script:colors.muted
   $body.Location=New-Object Drawing.Point(27,112); $body.MaximumSize=New-Object Drawing.Size(($pageWidth-80),68); $body.AutoSize=$true; $card.Controls.Add($body)
   $limit=New-Label 'Known limitation: the current native runtime has not been verified through a complete playthrough and is known to fail during a boss encounter. This is not a finished or fully compatible game release.' 10 $false $script:colors.text
