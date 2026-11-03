@@ -36,10 +36,14 @@ bool copy_file(const std::string& from, const std::string& to) {
     if (!out) { fclose(in); return false; }
     char buf[65536];
     size_t n;
-    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) fwrite(buf, 1, n, out);
-    fclose(in);
-    fclose(out);
-    return true;
+    bool ok = true;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) { ok = false; break; }
+    }
+    if (ferror(in) || fflush(out) != 0) ok = false;
+    if (fclose(in) != 0) ok = false;
+    if (fclose(out) != 0) ok = false;
+    return ok;
 }
 
 bool same(const PadState& a, const PadState& b) {
@@ -238,21 +242,28 @@ bool input_replay_load(const std::string& dir, std::string& memcard_out) {
         fprintf(stderr, "[input] %s holds no input\n", path.c_str());
         return false;
     }
+    // A replay must use the memory-card snapshot from its recording. Running it
+    // against the live card can change the user's saves and makes the result
+    // dependent on unrelated game state, so fail closed when the snapshot is
+    // missing or cannot be copied.
+    const std::string snap = dir + "/memcard_a.raw";
+    if (!plat_readable(snap.c_str())) {
+        fprintf(stderr, "[input] %s has no memory-card snapshot; refusing replay\n", dir.c_str());
+        return false;
+    }
+    const std::string replay_card = dir + "/memcard_replay.raw";
+    if (!copy_file(snap, replay_card)) {
+        fprintf(stderr, "[input] could not copy the card snapshot to %s; refusing replay\n", replay_card.c_str());
+        return false;
+    }
+
     g_replay_last_key = std::max(g_replay.back().key, end_key);
     g_replay_by_frame = version < 2;
     std::stable_sort(g_jumps.begin(), g_jumps.end(), [](const Jump& a, const Jump& b) { return a.at < b.at; });
     g_next_jump_at = g_jumps.empty() ? UINT64_MAX : g_jumps[0].at;
     for (auto& s : g_replay_state) { s = PadState(); s.connected = true; }
     g_replay_loaded = true;
-    memcard_out.clear();
-    const std::string snap = dir + "/memcard_a.raw";
-    if (plat_readable(snap.c_str())) {
-        memcard_out = dir + "/memcard_replay.raw";
-        if (!copy_file(snap, memcard_out)) {
-            fprintf(stderr, "[input] could not copy the card snapshot; replaying with the live card\n");
-            memcard_out.clear();
-        }
-    }
+    memcard_out = replay_card;
     size_t poses = 0;
     for (const auto& c : g_poses) poses += c.replay.size();
     fprintf(stderr, "[input] replaying %zu changes over %u %s, %zu clock jumps and %zu pose changes from %s%s%s\n", g_replay.size(),
