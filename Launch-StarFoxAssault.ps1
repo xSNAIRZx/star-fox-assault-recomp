@@ -155,7 +155,7 @@ function New-Label([string]$text, [int]$size = 10, [bool]$bold = $false, $color 
   $l = New-Object Windows.Forms.Label
   $l.Text = $text
   $l.AutoSize = $true
-  $fontSize = [Math]::Max(10,$size)
+  $fontSize = [Math]::Max(8,$size)
   $fontFamily = if ($bold -or $fontSize -ge 20) { 'Bahnschrift SemiBold' } else { 'Segoe UI' }
   $l.Font = New-Object Drawing.Font($fontFamily, $fontSize, [Drawing.FontStyle]::Regular)
   $l.ForeColor = if ($null -eq $color -or $color.IsEmpty) { $script:colors.text } else { $color }
@@ -248,6 +248,20 @@ function Add-SectionHeader($parent, [string]$title, [string]$subtitle = '') {
 }
 function Get-NativeStatus {
   if (-not (Test-Path -LiteralPath $script:nativePath -PathType Leaf)) { return 'NOT BUILT' }
+  $buildInfoPath = Join-Path $script:projectDir 'user-data\native-build-info.json'
+  $buildInfo = $null
+  try { if (Test-Path -LiteralPath $buildInfoPath -PathType Leaf) { $buildInfo = Get-Content -LiteralPath $buildInfoPath -Raw | ConvertFrom-Json } } catch { }
+  if (-not $buildInfo -or [int]$buildInfo.schema_version -lt 2 -or [string]::IsNullOrWhiteSpace([string]$buildInfo.image_sha256)) { return 'UPDATE AVAILABLE' }
+  if (-not (Test-FilePath ([string]$script:discValue))) { return 'UPDATE AVAILABLE' }
+  try {
+    $imagePath = [IO.Path]::GetFullPath([string]$script:discValue)
+    $builtImagePath = [IO.Path]::GetFullPath([string]$buildInfo.image)
+    $imageFile = Get-Item -LiteralPath $imagePath -ErrorAction Stop
+    if (-not [string]::Equals($imagePath,$builtImagePath,[StringComparison]::OrdinalIgnoreCase) -or
+        [long]$buildInfo.image_size -ne [long]$imageFile.Length -or
+        [long]$buildInfo.image_modified_utc_ticks -ne [long]$imageFile.LastWriteTimeUtc.Ticks -or
+        [string]$buildInfo.game_id -cne 'GF7E01') { return 'UPDATE AVAILABLE' }
+  } catch { return 'UPDATE AVAILABLE' }
   $exeTime = (Get-Item -LiteralPath $script:nativePath).LastWriteTimeUtc
   $sources = @('CMakeLists.txt','runtime','recomp','decomp\config\GF7E01') | ForEach-Object { Join-Path $script:projectDir $_ }
   $latest = Get-ChildItem -LiteralPath $sources -Recurse -File -ErrorAction SilentlyContinue |
@@ -258,6 +272,26 @@ function Get-NativeStatus {
     Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
   if ($latest -and $latest.LastWriteTimeUtc -gt $exeTime) { return 'UPDATE AVAILABLE' }
   return 'READY · NATIVE PROTOTYPE'
+}
+function Test-NativeBuildImage([string]$imagePath) {
+  $buildInfoPath = Join-Path $script:projectDir 'user-data\native-build-info.json'
+  if (-not (Test-Path -LiteralPath $buildInfoPath -PathType Leaf)) { return $false }
+  try {
+    $buildInfo = Get-Content -LiteralPath $buildInfoPath -Raw | ConvertFrom-Json
+    if ([int]$buildInfo.schema_version -lt 2 -or [string]$buildInfo.game_id -cne 'GF7E01' -or
+        [string]::IsNullOrWhiteSpace([string]$buildInfo.image_sha256) -or [string]::IsNullOrWhiteSpace([string]$buildInfo.executable_sha256)) { return $false }
+    $image = Get-Item -LiteralPath $imagePath -ErrorAction Stop
+    $fullImagePath = [IO.Path]::GetFullPath($imagePath)
+    $builtImagePath = [IO.Path]::GetFullPath([string]$buildInfo.image)
+    if (-not [string]::Equals($fullImagePath,$builtImagePath,[StringComparison]::OrdinalIgnoreCase) -or
+        [long]$image.Length -ne [long]$buildInfo.image_size -or
+        [long]$image.LastWriteTimeUtc.Ticks -ne [long]$buildInfo.image_modified_utc_ticks) { return $false }
+    # A size/time/path mismatch forces a rebuild; matching these recorded attributes
+    # avoids re-hashing a multi-gigabyte image on every launch. The build hash remains
+    # part of the record and is verified by the build pipeline when the image is read.
+    $exeHash = (Get-FileHash -LiteralPath $script:nativePath -Algorithm SHA256).Hash
+    return [string]::Equals($exeHash,[string]$buildInfo.executable_sha256,[StringComparison]::OrdinalIgnoreCase)
+  } catch { return $false }
 }
 function Test-GameImage {
   param([string]$path)
@@ -307,6 +341,7 @@ function Start-NativeGame {
     if (Get-Process -Name assault -ErrorAction SilentlyContinue) { throw 'The native game is already running. Close it before starting another session.' }
     if (-not (Test-Path -LiteralPath $script:nativePath -PathType Leaf)) { throw 'Build the native app first with Build / Update.' }
     $info = Test-GameImage $script:discValue
+    if (-not (Test-NativeBuildImage $script:discValue)) { throw 'This native build does not match the selected game image, or its build record is missing. Rebuild from the selected image before playing.' }
     Save-Settings
     [IO.Directory]::CreateDirectory($script:nativeRunDir) | Out-Null
     $nativeArgs = Get-NativeGraphicsArguments
@@ -327,12 +362,14 @@ function Start-NativeGame {
     $previousModsDir = [Environment]::GetEnvironmentVariable('GCN_MODS_DIR','Process')
     $previousFontDir = [Environment]::GetEnvironmentVariable('GCN_FONT_DIR','Process')
     $previousTimeScale = [Environment]::GetEnvironmentVariable('GCN_TIMESCALE','Process')
+    $previousClockLog = [Environment]::GetEnvironmentVariable('GCN_CLOCKLOG','Process')
     $previousScriptInput = [Environment]::GetEnvironmentVariable('GCN_INPUT','Process')
     $previousRamDump = [Environment]::GetEnvironmentVariable('GCN_RAM_DUMP','Process')
     $previousWatchAddr = [Environment]::GetEnvironmentVariable('GCN_WATCH_ADDR','Process')
     $previousGuard = [Environment]::GetEnvironmentVariable('GCN_GUARD','Process')
     try {
       [Environment]::SetEnvironmentVariable('GCN_TIMESCALE','1','Process')
+      [Environment]::SetEnvironmentVariable('GCN_CLOCKLOG','1','Process')
       [Environment]::SetEnvironmentVariable('GCN_INPUT',$null,'Process')
       [Environment]::SetEnvironmentVariable('GCN_RAM_DUMP',$ramDump,'Process')
       # GCN_WATCH_ADDR only reports in a diagnostic build, which the packaged build is not.
@@ -350,6 +387,7 @@ function Start-NativeGame {
       [Environment]::SetEnvironmentVariable('GCN_MODS_DIR',$previousModsDir,'Process')
       [Environment]::SetEnvironmentVariable('GCN_FONT_DIR',$previousFontDir,'Process')
       [Environment]::SetEnvironmentVariable('GCN_TIMESCALE',$previousTimeScale,'Process')
+      [Environment]::SetEnvironmentVariable('GCN_CLOCKLOG',$previousClockLog,'Process')
       [Environment]::SetEnvironmentVariable('GCN_INPUT',$previousScriptInput,'Process')
       [Environment]::SetEnvironmentVariable('GCN_RAM_DUMP',$previousRamDump,'Process')
       [Environment]::SetEnvironmentVariable('GCN_WATCH_ADDR',$previousWatchAddr,'Process')
@@ -816,14 +854,14 @@ $script:form.Controls.Add($sidebar)
 
 $script:content = New-Object Windows.Forms.Panel
 $script:content.Dock = 'None'; $script:content.Location = New-Object Drawing.Point($script:sidebarWidth,0)
-$script:content.Size = New-Object Drawing.Size([Math]::Max(880,$script:form.ClientSize.Width-$script:sidebarWidth),$script:form.ClientSize.Height); $script:content.Anchor = 'Top,Bottom,Left,Right'
+$script:content.Size = New-Object Drawing.Size([Math]::Max(320,$script:form.ClientSize.Width-$script:sidebarWidth),$script:form.ClientSize.Height); $script:content.Anchor = 'Top,Bottom,Left,Right'
 $script:content.BackColor = [Drawing.Color]::Transparent; $script:content.AutoScroll = $true
 $script:form.Controls.Add($script:content)
 $script:form.Add_Resize({
   if ($script:form.WindowState -ne [Windows.Forms.FormWindowState]::Minimized) {
     $script:sidebar.Height = $script:form.ClientSize.Height
     $script:content.Location = New-Object Drawing.Point($script:sidebarWidth,0)
-    $script:content.Size = New-Object Drawing.Size([Math]::Max(880,$script:form.ClientSize.Width - $script:sidebarWidth),[Math]::Max(100,$script:form.ClientSize.Height))
+    $script:content.Size = New-Object Drawing.Size([Math]::Max(320,$script:form.ClientSize.Width - $script:sidebarWidth),[Math]::Max(100,$script:form.ClientSize.Height))
     Update-StatusLabelBounds
     if ($script:backgroundResizeTimer) { $script:backgroundResizeTimer.Stop(); $script:backgroundResizeTimer.Start() }
   }
@@ -833,7 +871,7 @@ $script:form.Add_Shown({
   $script:form.PerformLayout()
   $script:sidebar.Height = $script:form.ClientSize.Height
   $script:content.Location = New-Object Drawing.Point($script:sidebarWidth,0)
-  $script:content.Size = New-Object Drawing.Size([Math]::Max(880,$script:form.ClientSize.Width - $script:sidebarWidth),[Math]::Max(100,$script:form.ClientSize.Height))
+  $script:content.Size = New-Object Drawing.Size([Math]::Max(320,$script:form.ClientSize.Width - $script:sidebarWidth),[Math]::Max(100,$script:form.ClientSize.Height))
   Update-LauncherBackground
   Update-StatusLabelBounds
   $script:sidebar.BringToFront()
@@ -1301,7 +1339,12 @@ function Build-SavesPage {
       $expectedSize = 4 * 1024 * 1024 / 8
       if ((Get-Item -LiteralPath $src).Length -ne $expectedSize) { throw "This backup is not a $expectedSize-byte (4 Mbit) card used by the native runtime. It cannot be restored." }
       $meta=Get-BackupMetadata $src
-      $answer=[Windows.Forms.MessageBox]::Show("Restore '$($meta.label)'?`r`n$([IO.Path]::GetFileName($src))`r`n`r`nThe active card will first be backed up automatically.",'Restore memory card','YesNo','Warning')
+      $expectedHash=[string]$meta.sha256
+      if ($expectedHash -and $expectedHash -notmatch '^[0-9a-fA-F]{64}$') { throw 'This backup has invalid checksum metadata and cannot be restored safely.' }
+      $sourceHash=(Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash
+      if ($expectedHash -and -not [string]::Equals($sourceHash,$expectedHash,[StringComparison]::OrdinalIgnoreCase)) { throw 'This backup does not match its saved SHA-256 checksum. The active memory card was not changed.' }
+      $integrityText=if($expectedHash){'Backup checksum verified.'}else{'No saved checksum is available for this older backup; its current contents cannot be compared with the original snapshot.'}
+      $answer=[Windows.Forms.MessageBox]::Show("Restore '$($meta.label)'?`r`n$([IO.Path]::GetFileName($src))`r`n$integrityText`r`n`r`nThe active card will first be backed up automatically.",'Restore memory card','YesNo','Warning')
       if ($answer -ne 'Yes') { return }
       if (Get-Process -Name assault -ErrorAction SilentlyContinue) { throw 'The native game started while the restore confirmation was open. Close it and retry.' }
       if (Test-Path -LiteralPath $script:memcardPath -PathType Leaf) {
@@ -1309,7 +1352,16 @@ function Build-SavesPage {
         [void](New-SaveBackup $script:memcardPath $preLabel @('auto','pre-restore') 'automatic backup before restore' $false)
       }
       [IO.Directory]::CreateDirectory((Split-Path -Parent $script:memcardPath)) | Out-Null
-      [IO.File]::Copy($src,$script:memcardPath,$true)
+      $restoreTemp=$script:memcardPath+'.restore-'+[Guid]::NewGuid().ToString('N')+'.tmp'
+      try {
+        [IO.File]::Copy($src,$restoreTemp,$false)
+        $tempFile=Get-Item -LiteralPath $restoreTemp -ErrorAction Stop
+        if ($tempFile.Length -ne $expectedSize) { throw 'The temporary restored card has the wrong size. The active card was not changed.' }
+        $tempHash=(Get-FileHash -LiteralPath $restoreTemp -Algorithm SHA256).Hash
+        if ($expectedHash -and -not [string]::Equals($tempHash,$expectedHash,[StringComparison]::OrdinalIgnoreCase)) { throw 'The temporary restored card failed its checksum check. The active card was not changed.' }
+        if (Test-Path -LiteralPath $script:memcardPath -PathType Leaf) { [IO.File]::Replace($restoreTemp,$script:memcardPath,[NullString]::Value) }
+        else { [IO.File]::Move($restoreTemp,$script:memcardPath) }
+      } finally { if (Test-Path -LiteralPath $restoreTemp -PathType Leaf) { Remove-Item -LiteralPath $restoreTemp -Force -ErrorAction SilentlyContinue } }
       Refresh-Backups $script:backupList
       Set-Status 'Save restored. The previous card was kept as an automatic backup.' $true
     } catch { Set-Status $_.Exception.Message }
@@ -1331,16 +1383,32 @@ function Refresh-Mods($list) {
 function Install-TexturePack([string]$zipPath) {
   $temp = Join-Path $script:modsWorkDir ([Guid]::NewGuid().ToString('N'))
   $rootPrefix = [IO.Path]::GetFullPath($temp).TrimEnd('\') + '\'
+  $maxArchiveEntries = 50000
+  $maxExpandedBytes = [long]2GB
+  $totalExpandedBytes = [long]0
   [IO.Directory]::CreateDirectory($temp) | Out-Null
   try {
     $archive=[IO.Compression.ZipFile]::OpenRead($zipPath)
     try {
+      if ($archive.Entries.Count -gt $maxArchiveEntries) { throw "This texture pack has more than $maxArchiveEntries files and was not installed." }
       foreach ($entry in $archive.Entries) {
+        if ($entry.Length -lt 0 -or $entry.Length -gt $maxExpandedBytes -or ($totalExpandedBytes + $entry.Length) -gt $maxExpandedBytes) {
+          throw 'This texture pack expands beyond the 2 GiB safety limit and was not installed.'
+        }
         $target=[IO.Path]::GetFullPath((Join-Path $temp $entry.FullName))
         if (-not $target.StartsWith($rootPrefix,[StringComparison]::OrdinalIgnoreCase)) { throw 'The ZIP contains an unsafe path and was not installed.' }
         if ($entry.FullName.EndsWith('/')) { [IO.Directory]::CreateDirectory($target) | Out-Null; continue }
         [IO.Directory]::CreateDirectory((Split-Path -Parent $target)) | Out-Null
-        $src=$entry.Open(); $dst=[IO.File]::Open($target,[IO.FileMode]::CreateNew); try { $src.CopyTo($dst) } finally { $dst.Dispose(); $src.Dispose() }
+        $src=$entry.Open(); $dst=[IO.File]::Open($target,[IO.FileMode]::CreateNew)
+        try {
+          $buffer=New-Object byte[] (1024*1024); $entryBytes=[long]0
+          while (($read=$src.Read($buffer,0,$buffer.Length)) -gt 0) {
+            $entryBytes += $read; $totalExpandedBytes += $read
+            if ($entryBytes -gt $entry.Length -or $totalExpandedBytes -gt $maxExpandedBytes) { throw 'The texture pack expanded beyond its declared size or the 2 GiB safety limit.' }
+            $dst.Write($buffer,0,$read)
+          }
+          if ($entryBytes -ne $entry.Length) { throw 'A texture pack entry was incomplete; no files were installed.' }
+        } finally { $dst.Dispose(); $src.Dispose() }
       }
     } finally { $archive.Dispose() }
     $ini=Get-ChildItem -LiteralPath $temp -Recurse -File | Where-Object { $_.Name -ieq 'textures.ini' } | Select-Object -First 1
@@ -1565,7 +1633,7 @@ function Build-SettingsPage {
     $id=$row.id
     $b.Add_Click({
       $d=New-Object Windows.Forms.OpenFileDialog
-      if ($id -eq 'disc') { $d.Filter='GameCube images (*.iso;*.ciso;*.gcm;*.rvz)|*.iso;*.ciso;*.gcm;*.rvz|All files (*.*)|*.*' }
+      if ($id -eq 'disc') { $d.Filter='Supported game images (*.iso;*.ciso)|*.iso;*.ciso|All files (*.*)|*.*' }
       elseif ($id -eq 'dolphin') { $d.Filter='Dolphin executable (Dolphin.exe)|Dolphin.exe|Executable (*.exe)|*.exe' }
       else { $d.Filter='Controller mappings (controls.txt)|controls.txt|Text files (*.txt)|*.txt|All files (*.*)|*.*' }
       if ($d.ShowDialog() -eq 'OK') { $t.Text=$d.FileName }

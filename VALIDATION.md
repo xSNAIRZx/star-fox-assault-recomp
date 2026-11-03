@@ -3,6 +3,32 @@
 Scope: bounded setup, build and startup checks completed on one tested Windows PC.
 Passing checks here do not establish full-game compatibility.
 
+## Reliability and launcher audit — 2026-11-03
+
+Source review found that a locally built executable was not tied to the currently selected
+game-image identity, save restore did not verify available backup checksums, and texture-pack
+import had no archive-entry or expanded-size ceiling. The current source now records image path,
+size, modification time and SHA-256 with each native build; launch checks the recorded path,
+size and time plus the executable hash, and the build rejects an image that changes during
+compilation. (The launcher does not re-hash a multi-gigabyte image at every play attempt.) Save
+restore verifies any recorded checksum and uses a checked temporary card plus an atomic replace.
+Texture imports are limited to 50,000 entries and 2 GiB expanded, with streamed byte-count checks.
+
+The settings picker now advertises only ISO/CISO, and the launcher permits smaller label fonts and
+a narrower content viewport while keeping the page layout scrollable. Normal launcher-started game
+sessions enable `GCN_CLOCKLOG=1` and write clock/frame/audio timing to that session's `.err` log.
+These diagnostics can distinguish guest-time progression from presentation rate during a later
+speed investigation; they do not fix or verify the reported speed issue. The source package initially
+failed its own checks because the extension allowlist skipped the required font, and the update
+installer rejected a packaged `.psd1` tool manifest. Both allowlists are now aligned. The refreshed local candidate contained 254 payload
+files and passed extraction, hash, content-safety, asset-list, local-path and script-parser checks;
+installer success, rollback and preservation checks also passed against that candidate. The native
+runtime test suite passed 13 of 13 checks, the PowerShell parser passed 18 scripts, the launcher tool
+audit passed 110 path checks, and build-cache signature checks passed. These checks do not exercise
+image-mismatch, save-restore, texture-import or narrow-window behavior in a live launcher session.
+The rc.3 download remains older than this source audit; the refreshed local candidate is not a
+published release.
+
 ## Source-only branding update — 2026-11-03
 
 The launcher title, top-bar brand, About page, bootstrap error titles, README and credits now use

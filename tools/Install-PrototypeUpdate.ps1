@@ -74,7 +74,7 @@ function Test-UpdatePath([string]$path) {
       if ([IO.Path]::GetFileName($normalized) -in @('LICENSE','NOTICE')) { return $true }
       return $extension -in $allowedSourceExtensions
     }
-    '^tools/([A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+$' { return $extension -in @('.ps1','.cs','.py','.txt','.sh','.cmd','.bat') }
+    '^tools/([A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+$' { return $extension -in @('.ps1','.psd1','.cs','.py','.txt','.sh','.cmd','.bat') }
     '^third_party_licenses/[A-Za-z0-9_.-]+\.txt$' { return $true }
     default { return $false }
   }

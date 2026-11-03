@@ -42,7 +42,7 @@ foreach ($path in @($stage,$verify,$zipPath,$archiveHashPath)) {
   if (Test-Path -LiteralPath $full) { throw "Refusing to overwrite an existing package path: $full" }
 }
 
-$allowedExtensions = @('.c','.cc','.cpp','.cs','.h','.hh','.hpp','.inl','.cmake','.txt','.md','.py','.ps1','.cmd','.bat','.sh','.yml','.yaml','.json','.xml','.mm','.swift','.entitlements','.frag','.vert','.geom','.comp','.glsl','.glslinc','.inc','.rc','.def','.properties','.java','.kt','.gradle','.kts','.mk','.in','.manifest','.bin','.png','.ico','.sha1','.psd1')
+$allowedExtensions = @('.c','.cc','.cpp','.cs','.h','.hh','.hpp','.inl','.cmake','.txt','.md','.py','.ps1','.cmd','.bat','.sh','.yml','.yaml','.json','.xml','.mm','.swift','.entitlements','.frag','.vert','.geom','.comp','.glsl','.glslinc','.inc','.rc','.def','.properties','.java','.kt','.gradle','.kts','.mk','.in','.manifest','.bin','.png','.ico','.ttf','.sha1','.psd1')
 $excludedSegments = @('.git','.claude','.githooks','analysis','orig','build','build-native','build-desktop','userdata','user-data','saves','reference-metadata')
 $packageFiles = New-Object 'System.Collections.Generic.List[object]'
 $manifestPath = 'SHA256SUMS.txt'

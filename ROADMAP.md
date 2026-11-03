@@ -10,6 +10,8 @@ The aim is a dependable Windows launcher that builds locally from the user's own
 - Cancellation, retry, invalid input, corrupt downloads, cached rebuilding and local update protections have been exercised.
 - The launcher already exposes internal resolution, aspect ratio, FXAA, output filtering, fullscreen, VSync, volume, a stick
 deadzone and controller mapping.
+- Native build records now bind a launchable executable to the selected image path and recorded image identity; mismatches require a rebuild.
+- Normal launcher-started native sessions write guest-clock and frame pacing diagnostics to their session error log to help separate simulation speed from rendering speed.
 - First-mission flight, menus and profile persistence have been tested. Full mission completion and later missions remain unverified. The disappearing first boss and current-thread-pointer crash are open issues.
 
 See [VALIDATION.md](VALIDATION.md) for the evidence and its limits.

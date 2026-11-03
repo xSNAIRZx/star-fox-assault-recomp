@@ -10,7 +10,9 @@ An experimental Windows x64 native recompilation project for the USA GameCube re
 
 *Custom project cover based on the launcher's hangar artwork. This is fan-project artwork, not the original retail box cover.*
 
-[Download the experimental Windows build](https://github.com/xSNAIRZx/star-fox-assault-recomp/releases/tag/v0.2.0-rc.3) · [Planned updates](ROADMAP.md) · [Validation and known issues](VALIDATION.md)
+[Latest available download: experimental 0.2.0-rc.3](https://github.com/xSNAIRZx/star-fox-assault-recomp/releases/tag/v0.2.0-rc.3) · [Planned updates](ROADMAP.md) · [Validation and known issues](VALIDATION.md)
+
+The source repository includes follow-up launcher and safety changes that are not in the rc.3 download. Treat the ZIP as an older candidate until a refreshed package is built and validated.
 
 ## Launcher preview
 

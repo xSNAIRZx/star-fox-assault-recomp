@@ -115,6 +115,8 @@ try {
   Test-BuildCancel
   $built=Join-Path $BuildDirectory 'assault.exe'
   if(-not(Test-Path -LiteralPath $built -PathType Leaf)){throw 'The build did not produce assault.exe.'}
+  $imageAfterBuild=Get-Item -LiteralPath $GameImage -ErrorAction Stop
+  if($imageAfterBuild.Length -ne $image.Length -or $imageAfterBuild.LastWriteTimeUtc.Ticks -ne $image.LastWriteTimeUtc.Ticks){throw 'The selected game image changed during the build. The previous native executable was kept; run the build again with the unchanged image.'}
   if(Get-Process -Name assault -ErrorAction SilentlyContinue){throw 'Close the game before installing the new build.'}
   Set-BuildStatus 'running' 'Installing native build' 'Keeping the previous executable until the new build is ready.'
   $destination=Split-Path -Parent $executable
@@ -130,7 +132,7 @@ try {
     if(Test-Path -LiteralPath $executable){[IO.File]::Replace($pending,$executable,(Join-Path $destination 'assault.previous.exe'))}
     else {Move-Item -LiteralPath $pending -Destination $executable}
   }
-  [ordered]@{schema_version=1;built_at=(Get-Date).ToUniversalTime().ToString('o');source_sha256=$fingerprint;image=$GameImage;game_id=$imageInfo.game_id;executable_sha256=$hash;compiler=$tools.cc;diagnostic=[bool]$DiagnosticBuild} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $project 'user-data\native-build-info.json') -Encoding UTF8
+  [ordered]@{schema_version=2;built_at=(Get-Date).ToUniversalTime().ToString('o');source_sha256=$fingerprint;image=$GameImage;image_size=[long]$image.Length;image_modified_utc_ticks=[long]$image.LastWriteTimeUtc.Ticks;image_sha256=$imageSha256;game_id=$imageInfo.game_id;executable_sha256=$hash;compiler=$tools.cc;diagnostic=[bool]$DiagnosticBuild} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $project 'user-data\native-build-info.json') -Encoding UTF8
   Set-BuildStatus 'succeeded' 'Ready to play' 'The native build is complete.' 100
 } catch [OperationCanceledException] {
   Set-BuildStatus 'cancelled' 'Cancelled' 'Build cancelled; the previous executable and saves were retained.'

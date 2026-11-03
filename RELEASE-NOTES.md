@@ -50,6 +50,22 @@ repackaging run before they reach a download.
   whose volume value is not a number opens with the default volume rather than stopping the
   launcher before its window appears.
 - Two widgets that were created but never placed on any page were removed.
+- Native build metadata now records the selected image path, size, modification time and SHA-256.
+  The launcher refuses to play if the selected image no longer matches that build record or the
+  executable hash has changed; builds also reject an image that changes while compiling.
+- Save restore verifies recorded backup hashes and installs a checked temporary copy atomically,
+  preserving the live card if the source is invalid or the copy is interrupted.
+- Texture-pack extraction now limits ZIP entry count and expanded data to reduce resource-exhaustion
+  risks, and checks actual extracted bytes against the ZIP declarations.
+- The settings chooser now lists only ISO/CISO formats accepted by the image inspector. Launcher
+  typography can scale below 10 pt and a narrow viewport scrolls the existing page layout instead
+  of forcing the content panel itself to be 880 pixels wide.
+- Native sessions now enable the runtime's clock diagnostics. They add guest-time, host-time,
+  presented-frame, work-per-frame and audio-frame lines to the session error log; they are intended
+  to diagnose reported speed differences, not to claim that the game-speed issue is fixed.
+- The source packager now includes the launcher font file it already required, and the update
+  installer accepts the packaged PowerShell data manifest. A fresh local package and its safe
+  install/rollback checks passed; this local audit package is not a published release.
 
 ## rc.2 diagnostics and validation baseline
 
