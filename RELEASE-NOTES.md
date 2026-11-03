@@ -16,6 +16,15 @@ The rc.3 ZIP contains 243 payload files, uses portable forward-slash paths, and 
 per-file SHA-256, content-safety, asset-allowlist and PowerShell parser checks. The adjacent `.zip.sha256`
 sidecar records its archive checksum.
 
+### Stick deadzone for the built-in controller path
+
+`--deadzone=<percent>` (0 to 40) is new, and Settings exposes it as **Stick deadzone**. It
+shapes the built-in controller sticks with one radial deadzone and spreads the travel past it
+across the full range, so a diagonal push needs the same travel as a straight one and leaving
+the zone is a small step rather than a jump the size of the threshold. A controls.txt binding
+keeps its own `deadzone` for the pads it names, and **Runtime default** leaves the previous
+per-axis thresholds exactly as they were.
+
 ## rc.2 diagnostics and validation baseline
 
 The launcher branding and code-source changes are described above. The analysis below is retained

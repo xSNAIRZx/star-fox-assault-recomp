@@ -28,6 +28,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "pad_curve.h"
 
 uint32_t boot_load(const char* iso_path);
 void debug_dump_threads();
@@ -150,6 +151,9 @@ void audio_set_master_volume(unsigned percent);
 // ---------------------------------------------------------------------------
 static SDL_GameController* g_ctrl;
 static bool g_script_only;
+// --deadzone=<percent>, -1 until given. Only the built-in controller path uses it: a pad a
+// controls.txt binding names keeps that binding's own deadzone (input_map.h).
+static int g_deadzone_percent = -1;
 
 static uint8_t axis_to_u8(int v, bool invert) {
     float f = v / 32767.0f;
@@ -196,12 +200,25 @@ static void merge_desktop_pad(PadState& p) {
         if (b(SDL_CONTROLLER_BUTTON_DPAD_DOWN)) p.buttons |= PAD_DOWN;
         if (b(SDL_CONTROLLER_BUTTON_DPAD_LEFT)) p.buttons |= PAD_LEFT;
         if (b(SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) p.buttons |= PAD_RIGHT;
-        int lx = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_LEFTX);
-        int ly = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_LEFTY);
-        if (abs(lx) > 4000 || abs(ly) > 4000) { p.stick_x = axis_to_u8(lx, false); p.stick_y = axis_to_u8(ly, true); }
-        int rx = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_RIGHTX);
-        int ry = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_RIGHTY);
-        if (abs(rx) > 1000 || abs(ry) > 1000) { p.cstick_x = axis_to_u8(rx, false); p.cstick_y = axis_to_u8(ry, true); }
+        const int lx = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_LEFTX);
+        const int ly = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_LEFTY);
+        const int rx = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_RIGHTX);
+        const int ry = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_RIGHTY);
+        if (g_deadzone_percent >= 0) {
+            // One circle for both sticks (pad_curve.h): a diagonal push no longer needs
+            // more travel than a straight one, and the travel past the circle is spread
+            // over the full range. A stick inside the circle is left alone, as any stick
+            // at rest is, so the keyboard and the mappings still drive it.
+            const float dz = padc::deadzone_fraction(g_deadzone_percent);
+            const padc::Position l = padc::apply_radial_deadzone(lx / 32767.0, -ly / 32767.0, dz);
+            const padc::Position r = padc::apply_radial_deadzone(rx / 32767.0, -ry / 32767.0, dz);
+            if (l.x != 0.0 || l.y != 0.0) { p.stick_x = padc::axis_to_byte(l.x); p.stick_y = padc::axis_to_byte(l.y); }
+            if (r.x != 0.0 || r.y != 0.0) { p.cstick_x = padc::axis_to_byte(r.x); p.cstick_y = padc::axis_to_byte(r.y); }
+        } else {
+            // No option: the fixed per-axis thresholds this path has always used.
+            if (abs(lx) > 4000 || abs(ly) > 4000) { p.stick_x = axis_to_u8(lx, false); p.stick_y = axis_to_u8(ly, true); }
+            if (abs(rx) > 1000 || abs(ry) > 1000) { p.cstick_x = axis_to_u8(rx, false); p.cstick_y = axis_to_u8(ry, true); }
+        }
         int lt = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
         int rt = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
         if (lt > 1000) { p.trig_l = std::max(p.trig_l, (uint8_t)(lt * 255 / 32767)); if (lt > 30000) p.buttons |= PAD_L; }
@@ -354,6 +371,11 @@ int main(int argc, char** argv) {
             if (!strcmp(argv[i] + 9, "sharp")) sharp = true;
             else if (!strcmp(argv[i] + 9, "smooth")) sharp = false;
             else { fprintf(stderr, "--filter expects sharp or smooth\n"); return 1; }
+        }
+        else if (!strncmp(argv[i], "--deadzone=", 11)) {
+            if (!parse_integer_option(argv[i] + 11, 0, 40, g_deadzone_percent)) {
+                fprintf(stderr, "--deadzone expects 0 to 40, the percent of stick travel that reads as nothing\n"); return 1;
+            }
         }
         else if (!strncmp(argv[i], "--dump-dir=", 11)) gx::g_dump_dir = argv[i] + 11;
         else if (!strncmp(argv[i], "--dump-every=", 13)) gx::g_dump_every = atoi(argv[i] + 13);

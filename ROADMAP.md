@@ -8,7 +8,8 @@ The aim is a dependable Windows launcher that builds locally from the user's own
 
 - The packaged Import & Build flow passed an empty-cache online build and reached the readable safety screen on the tested Windows PC.
 - Cancellation, retry, invalid input, corrupt downloads, cached rebuilding and local update protections have been exercised.
-- The launcher already exposes internal resolution, aspect ratio, FXAA, output filtering, fullscreen, VSync, volume and controller mapping.
+- The launcher already exposes internal resolution, aspect ratio, FXAA, output filtering, fullscreen, VSync, volume, a stick
+deadzone and controller mapping.
 - First-mission flight, menus and profile persistence have been tested. Full mission completion and later missions remain unverified. The disappearing first boss and current-thread-pointer crash are open issues.
 
 See [VALIDATION.md](VALIDATION.md) for the evidence and its limits.

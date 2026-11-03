@@ -36,6 +36,10 @@ add_executable(pointer_sanity_test pointer_sanity_test.cpp)
 target_compile_features(pointer_sanity_test PRIVATE cxx_std_20)
 add_test(NAME pointer_sanity_test COMMAND pointer_sanity_test)
 
+add_executable(pad_curve_test pad_curve_test.cpp)
+target_compile_features(pad_curve_test PRIVATE cxx_std_20)
+add_test(NAME pad_curve_test COMMAND pad_curve_test)
+
 add_executable(disc_image_test disc_image_test.cpp ../runtime/disc_image.cpp)
 target_include_directories(disc_image_test PRIVATE ../runtime)
 target_compile_features(disc_image_test PRIVATE cxx_std_20)

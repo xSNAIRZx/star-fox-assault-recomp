@@ -47,11 +47,12 @@ $script:settings = [ordered]@{
   aspect = 'original'
   aa = 'off'
   filter = 'sharp'
+  deadzone = ''
 }
 if (Test-Path -LiteralPath $script:settingsPath) {
   try {
     $saved = Get-Content -LiteralPath $script:settingsPath -Raw | ConvertFrom-Json
-    foreach ($key in @('disc','dolphin','scale','muteMusic','inputLog','controls','nativeMods','fullscreen','vsync','volume','aspect','aa','filter')) {
+    foreach ($key in @('disc','dolphin','scale','muteMusic','inputLog','controls','nativeMods','fullscreen','vsync','volume','aspect','aa','filter','deadzone')) {
       if ($null -ne $saved.$key) { $script:settings[$key] = $saved.$key }
     }
   } catch {}
@@ -68,6 +69,10 @@ $script:aaValue = [string]$script:settings.aa
 if ($script:aaValue -notin @('off','fxaa')) { $script:aaValue = 'off' }
 $script:filterValue = [string]$script:settings.filter
 if ($script:filterValue -notin @('sharp','smooth')) { $script:filterValue = 'sharp' }
+# Empty leaves the runtime's own per-axis thresholds alone, which is what a profile saved
+# before this setting existed should keep using.
+$script:deadzoneValue = [string]$script:settings.deadzone
+if ($script:deadzoneValue -notin @('','0','5','10','15','20','30')) { $script:deadzoneValue = '' }
 $script:muteValue = [bool]$script:settings.muteMusic
 $script:logValue = [bool]$script:settings.inputLog
 $script:nativeModsValue = [bool]$script:settings.nativeMods
@@ -98,6 +103,7 @@ function Save-Settings {
   $script:settings.aspect = [string]$script:aspectValue
   $script:settings.aa = [string]$script:aaValue
   $script:settings.filter = [string]$script:filterValue
+  $script:settings.deadzone = [string]$script:deadzoneValue
   $script:settings.muteMusic = [bool]$script:muteValue
   $script:settings.inputLog = [bool]$script:logValue
   $script:settings.controls = $script:controlsValue
@@ -276,6 +282,7 @@ function Start-NativeGame {
     $nativeArgs = Get-NativeGraphicsArguments
     $nativeArgs += "--vsync=$([int]$script:vsyncValue)"
     $nativeArgs += "--volume=$([int]$script:volumeValue)"
+    if ($script:deadzoneValue) { $nativeArgs += ('--deadzone={0}' -f $script:deadzoneValue) }
     if($script:fullscreenValue){$nativeArgs += '--fullscreen'}
     if (-not $script:logValue) { $nativeArgs += '--no-input-log' }
     if ($script:muteValue) { $nativeArgs += '--no-music' }
@@ -1469,10 +1476,17 @@ function Build-SettingsPage {
   $script:filterBox.SelectedIndex=[Array]::IndexOf(@('sharp','smooth'),$script:filterValue); if($script:filterBox.SelectedIndex -lt 0){$script:filterBox.SelectedIndex=0}
   $script:filterBox.Location=New-Object Drawing.Point(650,297); $script:filterBox.Size=New-Object Drawing.Size(190,30)
   Set-DarkComboBox $script:filterBox; $card.Controls.Add($script:filterBox)
-  $volumeLabel=New-Label 'MASTER VOLUME (%)' 8 $true $script:colors.muted; $volumeLabel.Location=New-Object Drawing.Point(870,273); $card.Controls.Add($volumeLabel)
+  $dzLabel=New-Label 'STICK DEADZONE' 8 $true $script:colors.muted; $dzLabel.Location=New-Object Drawing.Point(855,273); $card.Controls.Add($dzLabel)
+  $script:deadzoneBox=New-Object Windows.Forms.ComboBox; $script:deadzoneBox.DropDownStyle='DropDownList'
+  $script:deadzoneBox.Items.AddRange([object[]]@('Runtime default','Off (0%)','5%','10%','15%','20%','30%'))
+  $dzValues=@('','0','5','10','15','20','30'); $script:deadzoneBox.SelectedIndex=[Array]::IndexOf($dzValues,$script:deadzoneValue); if($script:deadzoneBox.SelectedIndex -lt 0){$script:deadzoneBox.SelectedIndex=0}
+  $script:deadzoneBox.Location=New-Object Drawing.Point(855,297); $script:deadzoneBox.Size=New-Object Drawing.Size(125,30)
+  Set-DarkComboBox $script:deadzoneBox; $card.Controls.Add($script:deadzoneBox)
+  $dzNote=New-Label 'Pads no mapping names.' 8 $false $script:colors.muted; $dzNote.AutoSize=$true; $dzNote.Location=New-Object Drawing.Point(855,337); $card.Controls.Add($dzNote)
+  $volumeLabel=New-Label 'MASTER VOLUME (%)' 8 $true $script:colors.muted; $volumeLabel.Location=New-Object Drawing.Point(995,273); $card.Controls.Add($volumeLabel)
   $script:volumeBox=New-Object Windows.Forms.NumericUpDown
   $script:volumeBox.Minimum=0; $script:volumeBox.Maximum=100; $script:volumeBox.Increment=5
-  $script:volumeBox.Value=$script:volumeValue; $script:volumeBox.Location=New-Object Drawing.Point(870,297); $script:volumeBox.Size=New-Object Drawing.Size(140,30)
+  $script:volumeBox.Value=$script:volumeValue; $script:volumeBox.Location=New-Object Drawing.Point(995,297); $script:volumeBox.Size=New-Object Drawing.Size(120,30)
   $script:volumeBox.BackColor=$script:colors.panel2; $script:volumeBox.ForeColor=$script:colors.text; $card.Controls.Add($script:volumeBox)
   $aspectBadge=New-Object Windows.Forms.Label; $aspectBadge.Text='F8   TOGGLE ASPECT'; $aspectBadge.Location=New-Object Drawing.Point(195,337); $aspectBadge.Size=New-Object Drawing.Size(190,26)
   $aspectBadge.TextAlign='MiddleCenter'; $aspectBadge.BackColor=$script:colors.selection; $aspectBadge.ForeColor=$script:colors.cyan
@@ -1497,6 +1511,7 @@ function Build-SettingsPage {
     $filterOptions=@('sharp','smooth'); $script:filterValue=$filterOptions[$script:filterBox.SelectedIndex]
     $script:muteValue=$script:muteBox.Checked; $script:logValue=$script:logBox.Checked
     $script:fullscreenValue=$script:fullscreenBox.Checked; $script:vsyncValue=$script:vsyncBox.Checked; $script:volumeValue=[int]$script:volumeBox.Value
+    $dzOptions=@('','0','5','10','15','20','30'); $script:deadzoneValue=$dzOptions[$script:deadzoneBox.SelectedIndex]
     Save-Settings; Set-Status 'Settings saved.' $true
   }); $card.Controls.Add($save)
   $controllerRule=New-Object Windows.Forms.Panel; $controllerRule.Location=New-Object Drawing.Point(25,527); $controllerRule.Size=New-Object Drawing.Size(620,1); $controllerRule.BackColor=$script:colors.line; $card.Controls.Add($controllerRule)

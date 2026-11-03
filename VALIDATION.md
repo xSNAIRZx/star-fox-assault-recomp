@@ -80,6 +80,24 @@ provides their own supported game image and builds locally.
 
 ## Validation log
 
+### 2026-11-03 — stick deadzone for the built-in controller path
+
+Added `--deadzone=<percent>` (0 to 40) and a launcher setting for it. A controls.txt binding
+has carried its own `deadzone` for a while, but a pad the file does not name went through a
+threshold fixed in the source (4000/32767 on the stick, 1000 on the C stick), compared per
+axis with the raw axis passed through afterwards, and the launcher had no way to reach it.
+With the option set both sticks use a radial deadzone: anything inside a circle of that
+radius is at rest, and the travel left over is spread across the full range, so a diagonal
+push needs the same travel as a straight one and the first movement past the circle is a
+small step instead of a jump the size of the threshold. Without the option the previous
+per-axis thresholds are used unchanged, so an existing profile keeps its behavior.
+
+Covered by `pad_curve_test`: percent and clamping, rest inside the circle, unity with no
+deadzone, rescale past the edge, a straight and a diagonal push of equal length agreeing, no
+jump at the edge, direction preserved at every distance, a square-cornered axis pair held at
+1 rather than overflowing the byte, and the byte conversion including NaN and out-of-range
+input. Not verified: any feel on a real pad.
+
 ### 2026-11-03 — particle and VFX rendering review; asset-override size limit
 
 How particle and visual-effect draws reach the renderer was reviewed from source only. No
