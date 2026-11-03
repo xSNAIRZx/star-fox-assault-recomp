@@ -19,6 +19,13 @@ inline bool gcn_word_is_guest_pointer(uint32_t v) {
     return v >= 0x80000000u && v < 0x81800000u && (v & 3u) == 0;
 }
 
+// Zero is a brief, expected value while the SDK switches threads. Report only a non-null
+// value that cannot be a main-memory pointer, so a watch on 800000E4 does not log every
+// ordinary scheduler handoff during a normal play session.
+inline bool gcn_guard_should_report(uint32_t v) {
+    return v != 0 && !gcn_word_is_guest_pointer(v);
+}
+
 // The float a word encodes, when it encodes a finite one. Every 32-bit pattern decodes, so
 // the caller decides whether the value is meaningful; a pointer word is not.
 inline bool gcn_word_as_float(uint32_t v, float* out) {

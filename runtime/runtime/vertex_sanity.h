@@ -1,12 +1,10 @@
 // Whether a transformed vertex is a position the hardware could draw.
 //
-// Diagnostics only: nothing here changes what the guest sees. It exists because a vertex
-// whose position is not finite is not a slightly wrong vertex. No clamp or projection
-// recovers it, the primitive it belongs to is discarded, and a draw made of them collapses
-// to nothing on screen -- which is one shape the reported first-boss disappearance can take
-// and is invisible in a log that only counts vertices. Counting them turns "the boss was
-// not there" into the frame and draw that lost it, and separates a bad position matrix
-// (the transform's input) from a good matrix and bad vertices (the data or the arithmetic).
+// Diagnostics only: this helper does not change what the guest sees or what the renderer
+// submits. A non-finite transformed position may be rejected by the graphics driver, but
+// this check only reports the affected draw. Counting them turns "the boss was not there"
+// into the frame and draw whose values need inspection, and separates a bad position matrix
+// (the transform's input) from a good matrix and bad vertices (the data or arithmetic).
 #pragma once
 
 #include <stddef.h>

@@ -45,6 +45,8 @@ The launcher also provides controller mapping, volume controls, session logs, sa
 
 *Settings rendered from the published launcher source using an empty profile. Choose your own image when setting up the launcher.*
 
+At the game's health-and-safety screen, focus the game window and press **Space** or **A** (or left-click) to continue. **Enter** sends Start; **B** or **Z** sends Back; **Escape** exits the game. Arrow keys steer, **I/J/K/L** navigate the D-pad, and **X/C/S/D/Q/W** provide the legacy action, face, Z and shoulder inputs. Mouse left/right/middle clicks send A/B/X. Press **F9** to capture the mouse and steer with relative movement; press F9 again or switch away from the game to release it. A connected controller works as well.
+
 ## Where the work is heading
 
 The next steps are gameplay stability, picture quality, controls and audio, launcher polish and release readiness, in roughly that order. This is a proposed priority order, not a release schedule, and these items are planned work rather than completed fixes. See [the full roadmap](ROADMAP.md) for completion criteria, longer-term ideas and how to report a problem.

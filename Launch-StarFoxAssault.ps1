@@ -399,16 +399,20 @@ function Start-NativeBuild {
     } finally { [Environment]::SetEnvironmentVariable('STARFOX_ASSAULT_PORTABLE',$oldPortableEnv,'Process') }
     if (-not $script:buildState.Process) { throw 'Could not start the native build worker.' }
 
-    $dialog = New-Object Windows.Forms.Form; $dialog.Text = 'Building Star Fox Assault'; $dialog.Size = New-Object Drawing.Size(620,230)
+    $dialog = New-Object Windows.Forms.Form; $dialog.Text = 'Building Star Fox Assault'; $dialog.Size = New-Object Drawing.Size(700,270)
     $dialog.StartPosition = 'CenterParent'; $dialog.FormBorderStyle = 'FixedDialog'; $dialog.MaximizeBox = $false; $dialog.MinimizeBox = $false
     $dialog.BackColor = $script:colors.base; $dialog.ForeColor = $script:colors.text
-    $message = New-Label 'Preparing the portable native toolchain…' 11 $true $script:colors.text
-    $message.Location = New-Object Drawing.Point(24,22); $dialog.Controls.Add($message)
+    $message = New-Label 'Preparing the portable native toolchain…' 13 $true $script:colors.text
+    $message.Location = New-Object Drawing.Point(26,22); $message.Size = New-Object Drawing.Size(620,28); $dialog.Controls.Add($message)
     $detail = New-Label 'Your selected game image stays in its original location.' 9 $false $script:colors.muted
-    $detail.Location = New-Object Drawing.Point(24,58); $dialog.Controls.Add($detail)
-    $bar = New-Object Windows.Forms.ProgressBar; $bar.Location = New-Object Drawing.Point(24,94); $bar.Size = New-Object Drawing.Size(555,24)
-    $bar.Style = 'Marquee'; $bar.MarqueeAnimationSpeed = 28; $dialog.Controls.Add($bar)
-    $cancel = New-Button 'CANCEL BUILD' 135; $cancel.Location = New-Object Drawing.Point(444,137); $dialog.Controls.Add($cancel)
+    $detail.Location = New-Object Drawing.Point(27,56); $detail.Size = New-Object Drawing.Size(615,22); $dialog.Controls.Add($detail)
+    $bar = New-Object Windows.Forms.ProgressBar; $bar.Location = New-Object Drawing.Point(27,94); $bar.Size = New-Object Drawing.Size(640,26)
+    $bar.Style = 'Marquee'; $bar.MarqueeAnimationSpeed = 24; $bar.ForeColor = $script:colors.cyan; $dialog.Controls.Add($bar)
+    $progressText = New-Label 'STEP 1 OF 5  ·  CHECKING GAME IMAGE' 9 $true $script:colors.cyan
+    $progressText.Location = New-Object Drawing.Point(27,130); $progressText.Size = New-Object Drawing.Size(500,22); $dialog.Controls.Add($progressText)
+    $safetyText = New-Label 'The original game image and existing saves are kept unchanged.' 9 $false $script:colors.muted
+    $safetyText.Location = New-Object Drawing.Point(27,164); $safetyText.Size = New-Object Drawing.Size(490,22); $dialog.Controls.Add($safetyText)
+    $cancel = New-Button 'CANCEL BUILD' 135; $cancel.Location = New-Object Drawing.Point(532,163); $dialog.Controls.Add($cancel)
     $cancel.Add_Click({ if($cancel.Tag -eq 'finished'){$dialog.Close();return}; try { [IO.File]::WriteAllText($cancelPath,'cancel',[Text.Encoding]::ASCII); $cancel.Enabled = $false; $message.Text = 'Cancellation requested; cleaning up the build…' } catch { $detail.Text = $_.Exception.Message } }.GetNewClosure())
     $buildState = $script:buildState
     $statusLabel = $script:statusLabel
@@ -432,8 +436,28 @@ function Start-NativeBuild {
         if ($state) {
           $message.Text = [string]$state.message
           $detail.Text = [string]$state.phase
-          if ($null -ne $state.percent) { $bar.Style='Continuous'; $bar.Value=[Math]::Max(0,[Math]::Min(100,[int]$state.percent)) }
-          else { $bar.Style='Marquee' }
+          $phaseName = [string]$state.phase
+          $step = switch -Regex ($phaseName) {
+            '^Checking image$' { 1; break }
+            '^Preparing tools$' { 2; break }
+            '^Recompiling game$|^Using build cache$' { 3; break }
+            '^Compiling native executable$' { 4; break }
+            '^Installing native build$|^Ready to play$' { 5; break }
+            '^Cancelled$|^Build failed$' { 0; break }
+            default { 0 }
+          }
+          $stepText = if($step -gt 0){'STEP {0} OF 5  ·  {1}' -f $step,$phaseName.ToUpperInvariant()}else{$phaseName.ToUpperInvariant()}
+          if ($null -ne $state.percent) {
+            $rawPercent = [Math]::Max(0,[Math]::Min(100,[double]$state.percent))
+            if ($phaseName -eq 'Recompiling game') { $overallPercent = 35 + [int]($rawPercent * 0.30) }
+            elseif ($phaseName -eq 'Compiling native executable') { $overallPercent = 68 + [int]($rawPercent * 0.25) }
+            else { $overallPercent = [int]$rawPercent }
+            $bar.Style='Continuous'; $bar.Value=[Math]::Max($bar.Value,[Math]::Min(99,$overallPercent))
+            $progressText.Text = '{0}  ·  {1}%' -f $stepText,$overallPercent
+          } else {
+            $bar.Style='Marquee'; $bar.MarqueeAnimationSpeed=24
+            $progressText.Text = if($step -gt 0){$stepText + '  ·  WORKING'}else{$stepText}
+          }
         }
         if ($buildState.Process.HasExited) {
           $timer.Stop(); $timer.Dispose()
@@ -443,11 +467,12 @@ function Start-NativeBuild {
           $buildState.Process.Dispose(); $buildState.Process = $null
           $nativeOutputExists = Test-Path -LiteralPath $nativePath -PathType Leaf
           $success = ($exitCode -eq 0 -and $state -and $state.state -eq 'succeeded' -and $nativeOutputExists)
-          if ($success) { $message.Text='Native build completed'; $detail.Text='The game image and existing saves were left unchanged.'; $bar.Style='Continuous'; $bar.Value=100; $statusLabel.Text='Native build ready.'; $statusLabel.ForeColor=$colors.green; if($navButtons.ContainsKey('Home')){Build-PageRefresh} }
+          if ($success) { $message.Text='Native build completed'; $detail.Text='The game image and existing saves were left unchanged.'; $bar.Style='Continuous'; $bar.MarqueeAnimationSpeed=0; $bar.Value=100; $progressText.Text='BUILD COMPLETE  ·  100%'; $progressText.ForeColor=$colors.green; $statusLabel.Text='Native build ready.'; $statusLabel.ForeColor=$colors.green; if($navButtons.ContainsKey('Home')){Build-PageRefresh} }
           else {
             $phase = if($state -and $state.state -in @('failed','cancelled')){[string]$state.state}else{'worker stopped'}
             $message.Text = if($phase -eq 'cancelled'){'Build cancelled'}else{'Build did not complete'}
             $detail.Text = "Details are saved in $jobDir"
+            $bar.Style='Continuous'; $bar.MarqueeAnimationSpeed=0; $progressText.Text=if($phase -eq 'cancelled'){'BUILD CANCELLED'}else{'BUILD FAILED'}; $progressText.ForeColor=$colors.red
             $statusLabel.Text=('{0} · state {1}, exit {2}, output {3}' -f $message.Text,$phase,$exitCode,$nativeOutputExists); $statusLabel.ForeColor=$colors.muted
           }
           $cancel.Text='CLOSE'; $cancel.Enabled=$true; $cancel.Tag='finished'
@@ -908,6 +933,8 @@ function Build-HomePage {
   $desc = New-Label ('{0}  ·  GAMEPLAY VALIDATION IN PROGRESS' -f (Get-PlaytimeText)) 10 $false $script:colors.text
   $descY = $pageHeight - 190
   $desc.Location = New-Object Drawing.Point(44,$descY); $desc.Anchor = 'Bottom,Left'; $scene.Controls.Add($desc)
+  $startupHint = New-Label 'QUICK CONTROLS  ·  Space / A or left-click continues  ·  F9 captures mouse flight controls' 9 $true $script:colors.cyan
+  $startupHint.Location = New-Object Drawing.Point(44,($pageHeight - 151)); $startupHint.Anchor = 'Bottom,Left'; $scene.Controls.Add($startupHint)
 
   $buildTitle = New-Label 'BUILD' 10 $true $script:colors.muted
   $infoTitleY = $pageHeight - 103

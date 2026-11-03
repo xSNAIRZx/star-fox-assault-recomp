@@ -68,3 +68,25 @@ if(WIN32)
   endif()
   add_test(NAME utf8_path_test COMMAND utf8_path_test)
 endif()
+
+# Test binaries built with llvm-mingw use the shared libc++ runtime. Keep the
+# runtime beside each executable so CTest and manual test runs both work when
+# the compiler directory is not on the user's PATH.
+if(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  get_filename_component(GCN_TEST_COMPILER_BIN "${CMAKE_CXX_COMPILER}" DIRECTORY)
+  get_property(_gcn_test_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(_runtime_dll libc++.dll libunwind.dll)
+    set(_runtime_path "${GCN_TEST_COMPILER_BIN}/${_runtime_dll}")
+    if(EXISTS "${_runtime_path}")
+      foreach(_test_target IN LISTS _gcn_test_targets)
+        get_target_property(_target_type "${_test_target}" TYPE)
+        if(_target_type STREQUAL "EXECUTABLE")
+          add_custom_command(TARGET ${_test_target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              "${_runtime_path}" "$<TARGET_FILE_DIR:${_test_target}>"
+            VERBATIM)
+        endif()
+      endforeach()
+    endif()
+  endforeach()
+endif()

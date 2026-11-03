@@ -24,6 +24,11 @@
 //                                 trigger, stick_left...) its whole travel is 0 to 1,
 //                                 which is what a pedal resting at one end wants.
 //   "<device>" axis <n>+ / <n>-   one half of an axis, from its centre outwards
+//
+// SDL desktop defaults remain active for keyboard and mouse input: arrows steer, I/J/K/L
+// drive the D-pad, A/Space confirms, Enter is Start, B/Z goes back, and left/right/middle
+// mouse buttons send A/B/X. F9 captures/releases the mouse and maps relative motion to the
+// left stick; losing window focus releases capture.
 // A device is named as SDL names it; "<name> #2" is the second of two with that name.
 //
 // Options, after the source:

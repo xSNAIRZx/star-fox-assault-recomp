@@ -51,6 +51,9 @@ carries the live guest stack under it.
 
 ## 3. Validate controls and audio
 
+- Keyboard and mouse gameplay defaults are implemented, including optional F9 mouse steering; live input verification remains open.
+- The Windows runtime test build now copies its C++ DLL dependencies beside test executables.
+
 - [ ] Test physical Xbox-style and PlayStation-style controllers, keyboard mapping, dead zones and reconnect behavior.
 - [ ] Check control prompts and navigation through setup, menus, gameplay and relaunch.
 - [ ] Check music, effects, cutscene audio, volume and mute behavior over longer play sessions.

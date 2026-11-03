@@ -171,9 +171,9 @@ Changes made to capture it, all diagnostics-only with no effect on guest behavio
 - A watched word that cannot be a guest pointer is named as such the moment it changes,
   including the float it decodes to (`runtime/pointer_sanity.h`, covered by
   `runtime/tests/pointer_sanity_test.cpp`).
-- The launcher sets `GCN_GUARD=800000E4` for every native session. It previously set only
-  `GCN_WATCH_ADDR`, which reports in a diagnostic build and the packaged build is not one,
-  so a session that hit this crash recorded nothing about it.
+- The launcher sets `GCN_GUARD=800000E4` for every native session. The guard now reports only
+  non-null values that cannot be guest-memory pointers; valid thread switches and the brief
+  null value between threads are ignored so normal play does not flood the session log.
 
 Nine runtime tests now build and pass outside Windows: the eight recorded above plus the
 pointer-word test. The Windows verify, build and packaging paths were not run, and no game
@@ -276,8 +276,9 @@ Changes made, all diagnostics-only with no effect on guest behavior or on what i
 - `GCN_VERTCHECK=1` counts each draw's transformed positions that are not finite and prints
   `[vertcheck] frame <n> draw <n> (command <n>): ...`, naming whether the position matrix was
   already bad (a bad matrix is printed in full) or was finite while the arithmetic produced the
-  bad values. A draw of non-finite positions is discarded rather than drawn small, so this is
-  the line that separates geometry lost to its numbers from geometry lost to culling. Tested by
+  bad values. The check only reports the draw; it does not discard or change rendered geometry.
+  A report shows a numerical problem worth investigating, while no report means this check saw
+  finite transformed positions and the visibility problem lies elsewhere. Tested by
   `runtime/tests/vertex_sanity_test.cpp` over infinity, NaN, denormals, a finite maximum, the
   stride, and both causes in the message.
 - Every `[guard]` and `[thread-watch]` line is now followed by `live guest stack: <addr> ...`,
@@ -310,3 +311,28 @@ What a person must capture next, and nothing here replaces it:
    holds the thread structure as it was at the failure.
 4. Both captures should use `GCN_INPUT` so the run is repeatable, and neither should be taken
    from a session that also ran a different build.
+
+### 2026-11-03 — controls, build progress and Windows test startup
+
+The desktop input layer now accepts Space/A and left-click as A, Enter as Start, B/Z and
+right-click as B, and middle-click as X. Arrow keys steer, I/J/K/L send the D-pad, and the
+legacy X/C/S/D/Q/W bindings remain available. F9 captures the mouse for relative flight
+steering; focus loss and exit release it. These mappings are compiled into the native build,
+but keyboard and mouse play have not been observed through a physical game session. The
+launcher Home page now shows the quick controls, and its build dialog has a larger progress
+bar, named build stages, percentage when the build tool reports it, and clear finish/fail/cancel
+states. The WinForms window has not been visually checked on this PC.
+
+The screenshot error `libc++.dll was not found` came from a Windows test executable. CMake now
+copies llvm-mingw's `libc++.dll` and `libunwind.dll` alongside each test executable, so the test
+can run by itself without adding the compiler folder to `PATH`. A clean test build was made,
+`disc_mods_test.exe` was launched with only the Windows system directory on `PATH`, and all 13
+CTest checks passed.
+
+The native game executable was rebuilt from a new offline build directory using the user's
+existing USA GF7E01 CISO, which was only read. It survived a bounded 128-second normal-speed
+run with scripted controller inputs and no crash. That run produced no frame captures at the
+requested interval, so it does not confirm the title/menu transition. The earlier retained
+frame at guest render frame 5,000 shows the `SELECT GAME` screen, but it came from a previous
+build. The current main-menu report and the first-boss disappearance remain open; no gameplay
+fix is claimed here.

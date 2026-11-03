@@ -1123,12 +1123,10 @@ static void flush_draw_stats() {
     t_stats = XfStats{};
 }
 
-// GCN_VERTCHECK=1: name a draw whose transformed positions are not finite. Such a draw is
-// not drawn small or off-screen, it is discarded, so this is the line that says a model
-// that should have been visible was lost to its numbers rather than to its culling -- which
-// is one shape the reported first-boss disappearance can take. It reports the frame, the
-// draw and whether the position matrix was already bad, and it is off unless the variable
-// is set. Capped, so a scene that is broken everywhere cannot flood the log.
+// GCN_VERTCHECK=1: name a draw whose transformed positions are not finite. This reports
+// possible invalid geometry without changing the batch or suppressing the draw. It reports
+// the frame, the draw and whether the position matrix was already bad, and is off unless the
+// variable is set. Capped, so a scene that is broken everywhere cannot flood the log.
 static void check_transformed_positions(const XfDraw& d, const GpuVertex* out) {
     static const bool on = getenv("GCN_VERTCHECK") != nullptr;
     if (!on || d.count == 0 || !out) return;

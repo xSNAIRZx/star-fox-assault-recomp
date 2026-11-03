@@ -491,10 +491,9 @@ so the variants never mix with the real ones).
 - `GCN_COPYLOG=1` logs EFB copies; `GCN_GXSTATS=1` prints per-frame GX counts.
 - `GCN_VERTCHECK=1` names each draw whose transformed positions are not finite, with the
   frame, the draw and whether the position matrix was already bad (a bad matrix is printed
-  in full). A draw like that is not drawn small or off-screen, it is discarded, so this is
-  the line that tells a model lost to its arithmetic from one lost to culling or to the
-  scene graph. It needs no diagnostic build and is capped at 32 lines, since a scene that is
-  broken everywhere would otherwise flood the log.
+  in full). This check only logs; it does not alter the draw or the batch. It needs no
+  diagnostic build and is capped at 32 lines, since a scene that is broken everywhere would
+  otherwise flood the log.
 - `--sample` reports once a second which guest functions each guest thread is in, by
   walking the guest's own stack; names come from the game's `symbols.txt`.
 - Build with `-DGCN_TRACE_CALLS=ON` to keep a real guest call stack, printed by the crash

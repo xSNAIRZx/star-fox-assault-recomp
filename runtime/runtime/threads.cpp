@@ -422,7 +422,7 @@ static void guard_check(const char* where) {
         GuardWord& g = g_guards[i];
         const uint32_t v = mem_r32(g.addr);
         if (g.have && v == g.last) continue;
-        if (g.have) {
+        if (g.have && gcn_guard_should_report(v)) {
             // A word that stops being the pointer it holds is named as such at once: the
             // saved current-thread crash had one bad address to show, and the word it came
             // from held 3F000000, the float 0.5f.
