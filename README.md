@@ -2,6 +2,20 @@
 
 An experimental Windows x64 native recompilation project for the USA GameCube release **GF7E01**. The launcher imports your own ISO/CISO, recompiles its PowerPC code and builds a native Windows executable locally. The game image remains read-only. Windows 10 version 1903 or newer and an OpenGL 3.3-capable graphics driver are required.
 
+<p align="center">
+  <img src="docs/images/project-cover.png" alt="Custom Star Fox Assault Recomp cover with an Arwing leaving the orbital hangar" width="360">
+</p>
+
+*Custom project cover based on the launcher's hangar artwork. This is fan-project artwork, not the original retail box cover.*
+
+[Download the experimental Windows build](https://github.com/xSNAIRZx/star-fox-assault-recomp/releases/tag/v0.2.0-rc.2) · [Planned updates](ROADMAP.md) · [Validation and known issues](VALIDATION.md)
+
+## Launcher preview
+
+![Star Fox Assault Recomp launcher with the Arwing hangar artwork and Play Native action](docs/images/launcher-home.png)
+
+*Launcher home after a local build. The hangar is launcher artwork, not an in-game rendering. Game compatibility remains experimental.*
+
 ## Play from the shareable package
 
 1. Extract the entire ZIP into a writable folder. Keep the launcher and its folders together.
@@ -22,6 +36,24 @@ First-mission flight, readable menus and saved-profile persistence have been tes
 The native runtime uses OpenGL. Graphics options include Match window or 1x–6x internal resolution, original 4:3, experimental 16:9, stretch, FXAA, Sharp/Smooth output filtering, fullscreen and VSync. Original 4:3 preserves the intended composition. Widescreen changes the 3D projection but still has game-specific culling limits. F8 switches Original/Wide during play; Alt+Enter toggles fullscreen. Higher resolution improves geometry edges without replacing original textures. Sharp with AA Off avoids FXAA softening.
 
 The launcher also provides controller mapping, volume controls, session logs, save backups with pre-restore snapshots, local asset-pack import/rollback, local ZIP updates, credits and an optional separately installed Dolphin fallback. Native asset packs support one active pack and exact-size non-executable replacements. Online update and mod services are not implemented.
+
+## Graphics and controls
+
+![Launcher settings showing internal resolution, aspect ratio, anti-aliasing, output filter, volume and controller options](docs/images/launcher-settings.png)
+
+*Settings rendered from the published launcher source using an empty profile. Choose your own image when setting up the launcher.*
+
+## Planned update path
+
+| Order | Focus | What the next step should deliver |
+| --- | --- | --- |
+| 1 | Gameplay stability | Reproduce and fix the disappearing first boss and current-thread-pointer crash; validate the first mission through completion. |
+| 2 | Picture quality | Check widescreen visibility and HUD proportions, resolution scaling, FXAA and output sharpness against original 4:3. |
+| 3 | Controls and audio | Test physical controllers, mappings, reconnects, music, sound effects and volume across missions. |
+| 4 | Launcher polish | Review fonts, spacing, artwork placement, navigation and build feedback across window sizes and display scaling. |
+| 5 | Release readiness | Repeat fresh setup, rebuild, cancellation, save backup and update checks on additional Windows PCs; publish the results. |
+
+This is a proposed priority order, not a release schedule. These items are planned, not completed fixes. Broader mission testing continues as stability improves. See [the full roadmap](ROADMAP.md) for completion criteria and longer-term ideas.
 
 ## Local files and updates
 
