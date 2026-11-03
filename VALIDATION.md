@@ -250,3 +250,63 @@ Not verified: the WinForms window was never shown, so the navigation and status 
 the 1180 px minimum width, the tooltip and the new colours are reasoned from the layout code
 rather than observed. Capture the default and minimum window sizes before describing the
 launcher as visually verified, and repackage before this reaches a download.
+
+### 2026-11-03 — first-mission stability: what the source can and cannot establish
+
+Both open gameplay defects were re-examined against the repository. Neither has a cause yet,
+and no game behavior was changed to guess at one.
+
+**Current-thread pointer crash.** `fn_80136C44`, which contains the reported `0x80136C60`, sits
+between `SelectThread` (`0x80136130`) and `OSClearStack` (`0x80136EFC`) in `symbols.txt`: the
+failing access is SDK thread code reading the current-thread pointer, which agrees with the
+earlier reading that `0x800000E4` held `0x3F000000`, the float `0.5f`. What that does not give
+is the writer. The DOL and the RELs are deliberately not in this repository, so the store that
+writes the pointer word cannot be disassembled here, and the guard observes a change only at an
+interrupt poll, a presented frame or a runtime write — it names the interval, not the
+instruction. Naming the store needs a `-DGCN_THREAD_WATCH` build, which the launcher does not
+produce; `tools/Build-StarFoxAssault.ps1 -DiagnosticBuild` does.
+
+**First-boss disappearance.** There is still no recording of the encounter, and the analysis
+metadata carries no boss or visibility symbols, so the scene graph and the game's own draw
+culling cannot be identified by name in this repository. What could be added is a way to tell
+the two shapes of "not there" apart from one run.
+
+Changes made, all diagnostics-only with no effect on guest behavior or on what is drawn:
+
+- `GCN_VERTCHECK=1` counts each draw's transformed positions that are not finite and prints
+  `[vertcheck] frame <n> draw <n> (command <n>): ...`, naming whether the position matrix was
+  already bad (a bad matrix is printed in full) or was finite while the arithmetic produced the
+  bad values. A draw of non-finite positions is discarded rather than drawn small, so this is
+  the line that separates geometry lost to its numbers from geometry lost to culling. Tested by
+  `runtime/tests/vertex_sanity_test.cpp` over infinity, NaN, denormals, a finite maximum, the
+  stride, and both causes in the message.
+- Every `[guard]` and `[thread-watch]` line is now followed by `live guest stack: <addr> ...`,
+  walked from the running guest thread's `r1` chain, so a capture names the game code that was
+  live when the word changed rather than only where in the runtime it was noticed. Tested by
+  `runtime/tests/guest_stack_test.cpp`: two frames innermost first, a chain that ends at a zero
+  word, a frame pointer that does not move up the stack, a pointer outside main memory, a
+  pointer in the locked-cache window, a stack pointer outside main memory, and the depth and
+  capacity limits.
+
+Checks run here: all 12 runtime tests build with `g++ -std=c++20` and pass (the nine recorded
+earlier plus the two above and `thread_watch_filter_test`), `threads.cpp` and `gx/xf.cpp` pass
+`-fsyntax-only -Wall -Wextra`, and `tools/Test-LauncherTools.ps1` passes. Not run: a native
+build, the launcher GUI, any GPU path, any controller, and any gameplay. `GCN_VERTCHECK` has
+therefore been exercised only through its helper, never against a real frame, and the guest
+stack has been exercised only against a synthetic memory image.
+
+What a person must capture next, and nothing here replaces it:
+
+1. Boss: replay or play to the encounter with `GCN_VERTCHECK=1`, and keep the log from the
+   moment the boss is last drawn to the moment it is missing. A `[vertcheck]` line names the
+   frame, the draw and the matrix. No such line means the geometry was still finite and the
+   disappearance is in visibility, culling or the scene graph instead.
+2. Boss, if there is no `[vertcheck]` line: capture the same window with `GCN_DRAWLOG=1`,
+   `GCN_MTXLOG=<frame>` for a frame with the boss and one without, and `GCN_RAM_DUMP_AT=` those
+   two frames, so the draw list, the matrices and memory can be compared frame to frame.
+3. Crash: build with `-DiagnosticBuild`, then replay the run that crashes with
+   `GCN_WATCH_ADDR=800000E4` and `GCN_GUARD=800000E4`. The `[thread-watch]` line names the store
+   that wrote the word and the guest stack under it names the code; `GCN_RAM_DUMP` beside it
+   holds the thread structure as it was at the failure.
+4. Both captures should use `GCN_INPUT` so the run is repeatable, and neither should be taken
+   from a session that also ran a different build.

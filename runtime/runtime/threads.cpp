@@ -13,6 +13,7 @@
 //     ourselves), or spawns a new host thread for a never-run context.
 #include "runtime.h"
 #include "pointer_sanity.h"
+#include "guest_stack.h"
 #include "mmu.h"
 #include "platform.h"
 #include "input_log.h"
@@ -400,6 +401,22 @@ static const int g_guard_count = [] {
     return n;
 }();
 
+// A guard line says where in the *runtime* a word changed; the guest's own chain says which
+// game code was live there, which is what narrows the search for the store that did it.
+static bool read_guest_word(void* ctx, uint32_t ea, uint32_t* out) {
+    (void)ctx;
+    if (!gcn_guest_ram_holds(ea)) return false;
+    *out = mem_r32(ea);
+    return true;
+}
+static const char* guest_stack_line(char* out, size_t size) {
+    CPU* c = cpu_current();
+    if (!c) return nullptr;
+    uint32_t frames[12];
+    const size_t n = gcn_walk_guest_stack(c->r[1], read_guest_word, nullptr, frames, 12);
+    return gcn_stack_text(frames, n, out, size);
+}
+
 static void guard_check(const char* where) {
     for (int i = 0; i < g_guard_count; i++) {
         GuardWord& g = g_guards[i];
@@ -414,6 +431,9 @@ static void guard_check(const char* where) {
             fprintf(stderr, "[guard] %08X: %08X -> %08X at %s, frame %u, guest time %.4f s%s%s\n", g.addr, g.last, v,
                     where, (unsigned)gx_frames_submitted(), (double)now_ticks() / TB_FREQ, why ? " | " : "",
                     why ? why : "");
+            char stack[192];
+            const char* chain = guest_stack_line(stack, sizeof stack);
+            if (chain) fprintf(stderr, "[guard]   live guest stack: %s\n", chain);
         }
         g.last = v;
         g.have = true;
@@ -700,6 +720,9 @@ extern "C" void debug_current_thread_store(CPU* c, uint32_t pc, uint32_t ea) {
     if (current == last) return;
     fprintf(stderr, "[thread-watch] 800000E4: %08X -> %08X at store %08X (lr %08X)\n",
             last, current, pc, c ? c->lr : 0);
+    char stack[192];
+    const char* chain = guest_stack_line(stack, sizeof stack);
+    if (chain) fprintf(stderr, "[thread-watch]   live guest stack: %s\n", chain);
     last = current;
 }
 #endif

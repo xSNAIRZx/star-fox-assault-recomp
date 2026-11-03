@@ -2,6 +2,7 @@
 // texgen) on the CPU, primitive assembly, pixel-state snapshots and EFB copies.
 #include "../runtime.h"
 #include "../platform.h"
+#include "../vertex_sanity.h"
 #include "gx.h"
 #include "render.h"
 #include "texture.h"
@@ -1122,6 +1123,34 @@ static void flush_draw_stats() {
     t_stats = XfStats{};
 }
 
+// GCN_VERTCHECK=1: name a draw whose transformed positions are not finite. Such a draw is
+// not drawn small or off-screen, it is discarded, so this is the line that says a model
+// that should have been visible was lost to its numbers rather than to its culling -- which
+// is one shape the reported first-boss disappearance can take. It reports the frame, the
+// draw and whether the position matrix was already bad, and it is off unless the variable
+// is set. Capped, so a scene that is broken everywhere cannot flood the log.
+static void check_transformed_positions(const XfDraw& d, const GpuVertex* out) {
+    static const bool on = getenv("GCN_VERTCHECK") != nullptr;
+    if (!on || d.count == 0 || !out) return;
+    constexpr size_t kStride = sizeof(GpuVertex) / sizeof(float);
+    const uint32_t bad = gcn_count_non_finite_positions(&out[0].pos[0], kStride, d.count);
+    if (!bad) return;
+    static std::atomic<uint32_t> reported{0};
+    if (reported.fetch_add(1) >= 32) return;
+    char note[192];
+    const bool matrix_bad = gcn_matrix_has_non_finite(g_posmtx, 12);
+    const char* why = gcn_vertex_check_note(d.count, bad, matrix_bad, note, sizeof note);
+    fprintf(stderr, "[vertcheck] frame %u draw %u (command %u): %s\n",
+            (unsigned)g_frames_submitted.load(std::memory_order_relaxed), (unsigned)d.seq, (unsigned)d.cmd, why);
+    // The matrix is what the transform multiplied by, so a bad one is the whole explanation
+    // and is worth printing in full.
+    if (matrix_bad) {
+        fprintf(stderr, "[vertcheck]   position matrix:");
+        for (int i = 0; i < 12; i++) fprintf(stderr, " %.6g", (double)g_posmtx[i]);
+        fputc('\n', stderr);
+    }
+}
+
 static void transform_draw(const Pending& pd, const XfDraw& d, Batch& b) {
     t_xf.base = pd.snap.data();
     for (int r = 0; r < XF_REGIONS; r++) t_xf.pt[r] = pd.snap.data() + d.snap[r];
@@ -1199,6 +1228,7 @@ static void transform_draw(const Pending& pd, const XfDraw& d, Batch& b) {
     uint8_t* dst = packed_dest(b, d.cmd, d.first_out, stride);
     if (!dst) {
         for (uint32_t i = 0; i < d.count; i++) transform_vertex(in[i], out[i], d.has_nrm);
+        check_transformed_positions(d, out);
         return;
     }
     uint8_t* const first = dst;
@@ -1206,6 +1236,7 @@ static void transform_draw(const Pending& pd, const XfDraw& d, Batch& b) {
         transform_vertex(in[i], out[i], d.has_nrm);
         memcpy(dst, &out[i], stride);
     }
+    check_transformed_positions(d, out);
     line_point_tex_offset(b, d.cmd, first, stride, d.count);
 }
 

@@ -489,6 +489,12 @@ so the variants never mix with the real ones).
   as it is raised and acknowledged, with a note when one is raised while the last is
   still pending.
 - `GCN_COPYLOG=1` logs EFB copies; `GCN_GXSTATS=1` prints per-frame GX counts.
+- `GCN_VERTCHECK=1` names each draw whose transformed positions are not finite, with the
+  frame, the draw and whether the position matrix was already bad (a bad matrix is printed
+  in full). A draw like that is not drawn small or off-screen, it is discarded, so this is
+  the line that tells a model lost to its arithmetic from one lost to culling or to the
+  scene graph. It needs no diagnostic build and is capped at 32 lines, since a scene that is
+  broken everywhere would otherwise flood the log.
 - `--sample` reports once a second which guest functions each guest thread is in, by
   walking the guest's own stack; names come from the game's `symbols.txt`.
 - Build with `-DGCN_TRACE_CALLS=ON` to keep a real guest call stack, printed by the crash
@@ -519,6 +525,11 @@ so the variants never mix with the real ones).
   is named as one the moment it changes, with the float it decodes to when it is one:
   the saved current-thread crash showed only `3F0002C8`, which was `2C8` past
   `3F000000`, the float `0.5f`, sitting where the thread pointer belonged.
+  Each change is followed by `live guest stack: <addr> <addr> ...`, walked from the
+  running guest thread's `r1` chain (caller frame pointer at `[sp]`, return address at
+  `[sp+4]`), so the line also names the game code that was live when the change was
+  noticed. The walk stops at the first frame pointer that is outside main memory, does not
+  move up the stack, or cannot be read.
 
 ## Finding a game's per-frame steps
 

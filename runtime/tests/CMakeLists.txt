@@ -45,6 +45,16 @@ target_include_directories(disc_image_test PRIVATE ../runtime)
 target_compile_features(disc_image_test PRIVATE cxx_std_20)
 add_test(NAME disc_image_test COMMAND disc_image_test)
 
+# The two capture helpers: non-finite transformed positions (a draw that vanishes) and the
+# guest's own call chain (which game code was live when a watched word changed).
+add_executable(vertex_sanity_test vertex_sanity_test.cpp)
+target_compile_features(vertex_sanity_test PRIVATE cxx_std_20)
+add_test(NAME vertex_sanity_test COMMAND vertex_sanity_test)
+
+add_executable(guest_stack_test guest_stack_test.cpp)
+target_compile_features(guest_stack_test PRIVATE cxx_std_20)
+add_test(NAME guest_stack_test COMMAND guest_stack_test)
+
 if(WIN32)
   add_executable(utf8_path_test utf8_path_test.cpp)
   target_compile_features(utf8_path_test PRIVATE cxx_std_20)
