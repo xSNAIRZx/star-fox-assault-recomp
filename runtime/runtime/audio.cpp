@@ -188,7 +188,16 @@ void audio_render(int16_t* out, int frames) {
         counter_frac -= elapsed;
         for (int i = 0; i < frames; i++) {
             if (g_dtk_buf_pos + 2 > g_dtk_buf.size() && !dtk_decode_block()) break;
-            int32_t l = g_dtk_buf[g_dtk_buf_pos], r = g_dtk_buf[g_dtk_buf_pos + 1];
+            // Make the next source frame available for interpolation. Decoding a block
+            // preserves the current frame while discarding samples already consumed.
+            if (g_dtk_buf_pos + 4 > g_dtk_buf.size()) dtk_decode_block();
+            const int32_t left0 = g_dtk_buf[g_dtk_buf_pos];
+            const int32_t right0 = g_dtk_buf[g_dtk_buf_pos + 1];
+            const bool has_next = g_dtk_buf_pos + 3 < g_dtk_buf.size();
+            const int32_t left1 = has_next ? g_dtk_buf[g_dtk_buf_pos + 2] : left0;
+            const int32_t right1 = has_next ? g_dtk_buf[g_dtk_buf_pos + 3] : right0;
+            const int32_t l = left0 + (int32_t)((left1 - left0) * g_dtk_pos);
+            const int32_t r = right0 + (int32_t)((right1 - right0) * g_dtk_pos);
             out[2 * i] = (int16_t)std::clamp(out[2 * i] + l * vl / 255, -32768, 32767);
             out[2 * i + 1] = (int16_t)std::clamp(out[2 * i + 1] + r * vr / 255, -32768, 32767);
             g_dtk_pos += step;

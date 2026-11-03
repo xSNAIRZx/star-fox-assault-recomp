@@ -47,6 +47,10 @@ The launcher also provides controller mapping, volume controls, session logs, sa
 
 At the game's health-and-safety screen, focus the game window and press **Space** or **A** (or left-click) to continue. **Enter** sends Start; **B** or **Z** sends Back; **Escape** exits the game. Arrow keys steer, **I/J/K/L** navigate the D-pad, and **X/C/S/D/Q/W** provide the legacy action, face, Z and shoulder inputs. Mouse left/right/middle clicks send A/B/X. Press **F9** to capture the mouse and steer with relative movement; press F9 again or switch away from the game to release it. A connected controller works as well.
 
+## Audio
+
+The runtime mixes the game's DSP effects and streamed disc music into 48 kHz stereo. Streamed music now uses linear interpolation when its source rate differs from the output rate, intended to smooth 32-to-48 kHz playback. This source change still needs in-game listening validation; full soundtrack and cutscene fidelity remain unverified. The launcher currently offers master volume and a music mute option, with no separate music/effects balance or equalizer.
+
 ## Where the work is heading
 
 The next steps are gameplay stability, picture quality, controls and audio, launcher polish and release readiness, in roughly that order. This is a proposed priority order, not a release schedule, and these items are planned work rather than completed fixes. See [the full roadmap](ROADMAP.md) for completion criteria, longer-term ideas and how to report a problem.
