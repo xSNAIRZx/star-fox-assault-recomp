@@ -509,13 +509,16 @@ so the variants never mix with the real ones).
   read the corrupted word's address off the report, replay again on a `-DGCN_WATCH` build
   with `GCN_WATCH_ADDR=<that>` and the store that did it is named. A check that fires
   right after a DMA names the runtime itself.
-- `GCN_GUARD=<hex address>` watches one word at the same points without any build option:
+- `GCN_GUARD=<hex address>[,<hex address>...]` watches up to eight words at the same points without any build option:
   every interrupt poll, every presented frame, and after each of the runtime's own writes
   into RAM (DVD, ARAM and locked-cache DMA, EFB copy write-back, `dcbz`). Each change is
   printed with where it was noticed, and a runtime write that covers the word is named as
   it happens. A change noticed at a poll or a frame was the guest's own store, made since
   the last check; `GCN_RAM_DUMP` at the crash and the guest's stack (back chain at r1,
-  saved LR at +4) take it from there.
+  saved LR at +4) take it from there. A watched word that stops being a guest pointer
+  is named as one the moment it changes, with the float it decodes to when it is one:
+  the saved current-thread crash showed only `3F0002C8`, which was `2C8` past
+  `3F000000`, the float `0.5f`, sitting where the thread pointer belonged.
 
 ## Finding a game's per-frame steps
 

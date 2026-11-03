@@ -32,6 +32,10 @@ add_executable(thread_watch_filter_test thread_watch_filter_test.c)
 target_compile_features(thread_watch_filter_test PRIVATE c_std_11)
 add_test(NAME thread_watch_filter_test COMMAND thread_watch_filter_test)
 
+add_executable(pointer_sanity_test pointer_sanity_test.cpp)
+target_compile_features(pointer_sanity_test PRIVATE cxx_std_20)
+add_test(NAME pointer_sanity_test COMMAND pointer_sanity_test)
+
 add_executable(disc_image_test disc_image_test.cpp ../runtime/disc_image.cpp)
 target_include_directories(disc_image_test PRIVATE ../runtime)
 target_compile_features(disc_image_test PRIVATE cxx_std_20)

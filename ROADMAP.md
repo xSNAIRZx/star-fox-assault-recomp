@@ -18,7 +18,15 @@ See [VALIDATION.md](VALIDATION.md) for the evidence and its limits.
 - [ ] Record repeatable steps for the boss disappearing, including when it happens near the screen center.
 - [ ] Trace visibility, module state and rendering around the failing encounter; identify the cause before changing behavior.
 - [ ] Trace the corrupted current-thread pointer and fix the responsible memory write or runtime behavior.
+- [ ] Capture the guard line and RAM dump from a normal-speed run that reaches the current-thread
+      failure, and identify the store that writes the float.
 - [ ] Complete the first mission at normal speed, including the boss, transition and save/reload, without the reported failures.
+
+**Evidence so far:** the saved trace resolves to `0x80136C60` inside `fn_80136C44`, with the
+reported address `0x3F0002C8` — `0x2C8` past `0x3F000000`, the float `0.5f` — in the word the
+SDK loads as the current-thread pointer. A float store landed in a pointer; the writer is not
+yet identified, and the boss has no recording that matches its evidence. Neither defect has
+been reproduced or fixed.
 
 **Completion evidence:** repeatable before/after checks, the settings and build used, a completed mission run and targeted regression checks for the fixes.
 

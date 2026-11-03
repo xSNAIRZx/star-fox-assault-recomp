@@ -61,6 +61,40 @@ provides their own supported game image and builds locally.
 
 ## Validation log
 
+### 2026-11-03 — current-thread pointer trace analysis and capture tooling
+
+The saved crash trace was read against the project's own analysis metadata. Instruction
+`0x80136C60` lies inside `fn_80136C44` (size `0xEC`) in the DOL, and the reported address
+`0x3F0002C8` is exactly `0x2C8` past `0x3F000000`. The word at `0x800000E4`, which the
+launcher already watched as the SDK's current-thread pointer, therefore held `0x3F000000` at
+the failure, and `0x3F000000` is the IEEE-754 encoding of `0.5f`.
+
+What that establishes: the corruption is a 32-bit float store landing in the pointer word,
+already in place before the failing SDK access — what the crash log reported without
+explaining it. What it does not establish: which store did it, in which frame, and whether
+the failing access is the first use of the bad value. A guest store can only be narrowed to
+the stretch between two polls, and the previous capture carried no guard output.
+
+Changes made to capture it, all diagnostics-only with no effect on guest behavior:
+
+- `GCN_GUARD` accepts up to eight comma-separated words instead of one, so the pointer and
+  the thread structure it should point at can be watched together.
+- A watched word that cannot be a guest pointer is named as such the moment it changes,
+  including the float it decodes to (`runtime/pointer_sanity.h`, covered by
+  `runtime/tests/pointer_sanity_test.cpp`).
+- The launcher sets `GCN_GUARD=800000E4` for every native session. It previously set only
+  `GCN_WATCH_ADDR`, which reports in a diagnostic build and the packaged build is not one,
+  so a session that hit this crash recorded nothing about it.
+
+Nine runtime tests now build and pass outside Windows: the eight recorded above plus the
+pointer-word test. The Windows verify, build and packaging paths were not run, and no game
+build or gameplay was exercised.
+
+Next capture needed: a normal-speed session that reaches the failure with the launcher's own
+log. The `[guard] 800000E4: ... at <where>, frame <n>` line names the frame and the value
+either side of the change, and the session's `GCN_RAM_DUMP` at the crash holds the thread
+structure around it. That pair is what identifies the writer.
+
 ### 2026-11-03 — host-script and runtime source checks
 
 The host scripts and runtime sources were also checked outside Windows for defects

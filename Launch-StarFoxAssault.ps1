@@ -290,11 +290,16 @@ function Start-NativeGame {
     $previousScriptInput = [Environment]::GetEnvironmentVariable('GCN_INPUT','Process')
     $previousRamDump = [Environment]::GetEnvironmentVariable('GCN_RAM_DUMP','Process')
     $previousWatchAddr = [Environment]::GetEnvironmentVariable('GCN_WATCH_ADDR','Process')
+    $previousGuard = [Environment]::GetEnvironmentVariable('GCN_GUARD','Process')
     try {
       [Environment]::SetEnvironmentVariable('GCN_TIMESCALE','1','Process')
       [Environment]::SetEnvironmentVariable('GCN_INPUT',$null,'Process')
       [Environment]::SetEnvironmentVariable('GCN_RAM_DUMP',$ramDump,'Process')
+      # GCN_WATCH_ADDR only reports in a diagnostic build, which the packaged build is not.
+      # The guard reports in any build, so a session that hits the current-thread crash
+      # carries the frame and the value either side of the change in its own log.
       [Environment]::SetEnvironmentVariable('GCN_WATCH_ADDR','800000E4','Process')
+      [Environment]::SetEnvironmentVariable('GCN_GUARD','800000E4','Process')
       [Environment]::SetEnvironmentVariable('GCN_FONT_DIR',(Join-Path $script:projectDir 'assets\fonts'),'Process')
       if($script:nativeModsValue) {
         if(-not(Test-Path -LiteralPath $script:nativeModsDir -PathType Container)){throw 'Install a native asset pack before enabling native mods.'}
@@ -308,6 +313,7 @@ function Start-NativeGame {
       [Environment]::SetEnvironmentVariable('GCN_INPUT',$previousScriptInput,'Process')
       [Environment]::SetEnvironmentVariable('GCN_RAM_DUMP',$previousRamDump,'Process')
       [Environment]::SetEnvironmentVariable('GCN_WATCH_ADDR',$previousWatchAddr,'Process')
+      [Environment]::SetEnvironmentVariable('GCN_GUARD',$previousGuard,'Process')
     }
     try {
       $tracker=Join-Path $script:projectDir 'tools\Track-Session.ps1'

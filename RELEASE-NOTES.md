@@ -1,5 +1,19 @@
 # 0.2.0-rc.2 - Windows x64 source-build release candidate
 
+## Unreleased — diagnostics after rc.2
+
+No new package accompanies this work, and rc.2 remains the current experimental candidate. The
+two reported gameplay defects are still unresolved: no build of the game could be run here, so
+nothing below is a fix.
+
+The current-thread crash trace now has an explanation to test. `0x80136C60` lies inside
+`fn_80136C44`, and the reported address `0x3F0002C8` is `0x2C8` past `0x3F000000` — the float
+`0.5f` — in the word the SDK loads as the current-thread pointer, so a float was stored over a
+pointer. `GCN_GUARD` now watches a list of words and says so when a watched pointer word stops
+being one, and the launcher enables it for `0x800000E4` on every native session, so the next run
+that fails carries the frame and both values in its own log. See `VALIDATION.md` for the analysis
+and the capture that is still missing.
+
 This candidate includes image-hash and build-worker-input fingerprinting so a changed image or build script invalidates stale build state. The launcher reports the image-check step and verifies the worker's completion status. The packaged rc.2 launcher completed a fresh empty-cache online build and bounded startup, described below. This verifies first-use build and startup only; it does not establish full-game compatibility.
 
 ## Empty-cache online build and startup

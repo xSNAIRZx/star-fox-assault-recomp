@@ -12,6 +12,7 @@
 //   * OSLoadContext(ctx) resumes whichever host thread owns the binding (possibly
 //     ourselves), or spawns a new host thread for a never-run context.
 #include "runtime.h"
+#include "pointer_sanity.h"
 #include "mmu.h"
 #include "platform.h"
 #include "input_log.h"
@@ -372,28 +373,64 @@ void debug_set_guest_check(GuestCheck fn) { g_guest_check = fn; }
 uint32_t gx_frames_submitted();
 void debug_dump_threads();
 
-static const uint32_t g_guard = getenv("GCN_GUARD") ? (uint32_t)strtoul(getenv("GCN_GUARD"), nullptr, 16) : 0;
-static uint32_t g_guard_last;
-static bool g_guard_have;
+// Up to eight watched words, from GCN_GUARD, separated by commas or spaces.
+struct GuardWord {
+    uint32_t addr;
+    uint32_t last;
+    bool have;
+};
+static GuardWord g_guards[8];
+static const int g_guard_count = [] {
+    const char* e = getenv("GCN_GUARD");
+    int n = 0;
+    while (e && *e && n < 8) {
+        while (*e == ',' || *e == ' ') e++;
+        if (!*e) break;
+        char* end = nullptr;
+        const uint32_t a = (uint32_t)strtoul(e, &end, 16);
+        if (end == e) break;
+        if (a) {
+            g_guards[n].addr = a;
+            g_guards[n].last = 0;
+            g_guards[n].have = false;
+            n++;
+        }
+        e = end;
+    }
+    return n;
+}();
 
 static void guard_check(const char* where) {
-    if (!g_guard) return;
-    const uint32_t v = mem_r32(g_guard);
-    if (g_guard_have && v == g_guard_last) return;
-    if (g_guard_have)
-        fprintf(stderr, "[guard] %08X: %08X -> %08X at %s, frame %u, guest time %.4f s\n", g_guard, g_guard_last, v,
-                where, (unsigned)gx_frames_submitted(), (double)now_ticks() / TB_FREQ);
-    g_guard_last = v;
-    g_guard_have = true;
+    for (int i = 0; i < g_guard_count; i++) {
+        GuardWord& g = g_guards[i];
+        const uint32_t v = mem_r32(g.addr);
+        if (g.have && v == g.last) continue;
+        if (g.have) {
+            // A word that stops being the pointer it holds is named as such at once: the
+            // saved current-thread crash had one bad address to show, and the word it came
+            // from held 3F000000, the float 0.5f.
+            char note[96];
+            const char* why = gcn_word_pointer_note(v, note, sizeof note);
+            fprintf(stderr, "[guard] %08X: %08X -> %08X at %s, frame %u, guest time %.4f s%s%s\n", g.addr, g.last, v,
+                    where, (unsigned)gx_frames_submitted(), (double)now_ticks() / TB_FREQ, why ? " | " : "",
+                    why ? why : "");
+        }
+        g.last = v;
+        g.have = true;
+    }
 }
 
 void debug_guard_dma(const char* what, uint32_t addr, uint32_t len) {
-    if (!g_guard) return;
+    if (!g_guard_count) return;
     // Main memory is mirrored at 0x0, 0x8 and 0xC; the locked cache at 0xE is not RAM.
     const bool ram = (addr >> 28) == 0x0 || (addr >> 28) == 0x8 || (addr >> 28) == 0xC;
-    const uint32_t a = addr & 0x01FFFFFFu, g = g_guard & 0x01FFFFFFu;
-    if (ram && g + 4 > a && g < a + len)
-        fprintf(stderr, "[guard] %08X is inside %s to %08X, %X bytes\n", g_guard, what, addr, len);
+    const uint32_t a = addr & 0x01FFFFFFu;
+    if (ram)
+        for (int i = 0; i < g_guard_count; i++) {
+            const uint32_t g = g_guards[i].addr & 0x01FFFFFFu;
+            if (g + 4 > a && g < a + len)
+                fprintf(stderr, "[guard] %08X is inside %s to %08X, %X bytes\n", g_guards[i].addr, what, addr, len);
+        }
     guard_check(what);
 }
 
