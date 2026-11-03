@@ -157,7 +157,7 @@ try {
     'decomp/config/GF7E01/symbols.txt','decomp/config/GF7E01/build.sha1','runtime/CMakeLists.txt','runtime/LICENSE',
     'runtime/runtime/hw/exi.cpp','runtime/runtime/disc_mods.cpp','runtime/runtime/assault.manifest','runtime/recomp/rel.py',
     'tools/Build-StarFoxAssault.ps1','tools/Build-NativeGame.ps1','tools/Build-CacheSignature.ps1','tools/Ensure-PortableToolchain.ps1','tools/Build-Launcher.ps1','tools/LauncherBootstrap.cs',
-    'tools/Package-Prototype.ps1'
+    'tools/Package-Prototype.ps1','tools/Install-PrototypeUpdate.ps1','tools/Track-Session.ps1','runtime/recomp/dol.py','runtime/recomp/recomp.py','runtime/recomp/ppc.py','runtime/recomp/extract_dol.py'
   )
   foreach ($relative in $required) {
     $copied = $packageFiles | Where-Object { $_.Relative -ceq $relative } | Select-Object -First 1

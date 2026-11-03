@@ -1261,12 +1261,40 @@ function Install-TexturePack([string]$zipPath) {
     @{name=$packName;source=[IO.Path]::GetFileName($zipPath);installed=(Get-Date).ToString('s')} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $targetRoot 'launcher-pack.json') -Encoding utf8
   } finally { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
 }
+function Get-PythonExecutable {
+  # The first build downloads and hash-verifies a portable Python (tools\portable-toolchain.json),
+  # so native asset packs can use that copy instead of requiring a separate install. The
+  # recorded hashes are checked again here, so a leftover or edited folder is not trusted.
+  $toolRoot = Join-Path $script:projectDir 'user-data\build-tools'
+  $manifestPath = Join-Path $script:projectDir 'tools\portable-toolchain.json'
+  if ((Test-Path -LiteralPath $toolRoot -PathType Container) -and (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+    try {
+      $entry = (Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).tools |
+        Where-Object { $_.id -eq 'python' } | Select-Object -First 1
+      if ($entry) {
+        $folder = Join-Path $toolRoot ('{0}-{1}' -f [string]$entry.id,[string]$entry.version)
+        $exe = if ($entry.archive_root) { Join-Path (Join-Path $folder ([string]$entry.archive_root)) ([string]$entry.executable) } else { Join-Path $folder ([string]$entry.executable) }
+        $stamp = Join-Path $folder '.ready.json'
+        if ((Test-Path -LiteralPath $exe -PathType Leaf) -and (Test-Path -LiteralPath $stamp -PathType Leaf)) {
+          $record = Get-Content -LiteralPath $stamp -Raw | ConvertFrom-Json
+          if ($record.archive_sha256 -eq $entry.sha256 -and
+              $record.executable_sha256 -eq (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash) {
+            return $exe
+          }
+        }
+      }
+    } catch { }
+  }
+  $installed = (Get-Command python.exe -ErrorAction SilentlyContinue).Source
+  if ($installed) { return $installed }
+  return $null
+}
 function Get-NativeDiscFileIndex {
   $runtimeRecomp = Join-Path $script:projectDir 'runtime\recomp'
   if (-not (Test-Path -LiteralPath $runtimeRecomp -PathType Container)) { throw 'The runtime disc tools are missing; native pack validation cannot continue.' }
   $null = Test-GameImage $script:discValue
-  $python = (Get-Command python.exe -ErrorAction SilentlyContinue).Source
-  if (-not $python) { throw 'Python is required to read the selected disc file table. Install Python 3 or use the Dolphin texture pack option.' }
+  $python = Get-PythonExecutable
+  if (-not $python) { throw 'Reading the disc file table needs Python. Run Import & Build once so the portable tools are installed, or install Python 3; the Dolphin texture pack option does not need it.' }
   $code = 'import json,sys;sys.path.insert(0,sys.argv[1]);from rel import disc_files;from dol import DiscImage;img=DiscImage(sys.argv[2]);files=disc_files(img);img.f.close();print(json.dumps({k:v[1] for k,v in files.items()},separators=(",",":")))'
   $raw = & $python -c $code $runtimeRecomp $script:discValue 2>&1
   if ($LASTEXITCODE -ne 0) { throw "Could not read the disc file table: $($raw -join ' ')" }

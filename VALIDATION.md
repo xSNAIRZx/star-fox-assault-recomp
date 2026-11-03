@@ -80,6 +80,23 @@ provides their own supported game image and builds locally.
 
 ## Validation log
 
+### 2026-11-03 — launcher tool audit
+
+Every project path the launcher opens was checked against what the package ships. Two real gaps
+came out of it. Native asset-pack import shelled out to a system `python.exe`, so it failed on a
+machine without one even though Import & Build already downloads and hash-verifies a portable
+Python into `user-data/build-tools`; the launcher now uses that copy first (re-checking the
+recorded archive and executable hashes) and only then falls back to PATH, and its message points
+at Import & Build before suggesting an install. Separately, the package and updater required-file
+lists did not name `tools/Install-PrototypeUpdate.ps1`, `tools/Track-Session.ps1` or the
+`runtime/recomp` modules the launcher and the build read, so a trimmed payload could have been
+published and failed at the user. Both lists cover them now.
+
+`tools/Test-LauncherTools.ps1` checks this without Windows or a game: every path the launcher
+opens must exist and be shipped (named explicitly or covered by a copied source tree) or be
+created at run time under `user-data`/`build-desktop`, and every file either required list names
+must exist in the repository, with the launcher's own dependencies required by both lists.
+
 ### 2026-11-03 — stick deadzone for the built-in controller path
 
 Added `--deadzone=<percent>` (0 to 40) and a launcher setting for it. A controls.txt binding

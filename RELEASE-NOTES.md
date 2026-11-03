@@ -25,6 +25,14 @@ the zone is a small step rather than a jump the size of the threshold. A control
 keeps its own `deadzone` for the pads it names, and **Runtime default** leaves the previous
 per-axis thresholds exactly as they were.
 
+### Launcher tool audit
+
+Native asset packs now use the portable Python that Import & Build already downloads and
+verifies, so importing a pack no longer depends on a separate Python install. The package and
+updater required-file lists now name every launcher script and recompiler module they read, and
+`tools/Test-LauncherTools.ps1` fails when a referenced tool is missing or no packaging rule
+ships it.
+
 ## rc.2 diagnostics and validation baseline
 
 The launcher branding and code-source changes are described above. The analysis below is retained
