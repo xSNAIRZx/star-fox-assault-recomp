@@ -61,6 +61,41 @@ provides their own supported game image and builds locally.
 
 ## Validation log
 
+### 2026-11-03 — particle and VFX rendering review; asset-override size limit
+
+How particle and visual-effect draws reach the renderer was reviewed from source only. No
+build of the game, no GPU and no gameplay were available here, so nothing in this entry is a
+visual result, and no rendering code was changed.
+
+- Effects are guest GX draws, and the analysis metadata carries no particle, effect, trail or
+  explosion symbols, so they cannot be identified by name from this repository. They arrive
+  as point, line and triangle primitives under the game's TEV blending and alpha test.
+- Points are already a complete sprite path: `gl_PointSize` is sent from the game's point
+  size, the fragment shader spreads the coordinate range back out with `gl_PointCoord`
+  (`u_points`, `u_point_off`, set per draw in `apply_state`), point size is kept in EFB
+  pixels, and `GL_PROGRAM_POINT_SIZE` is enabled for desktop core. A smoke or spark point
+  therefore samples its whole texture instead of one texel.
+- Lines are the one known gap, already documented in `graphics.md`: GX widens an antialiased
+  line into a quad and runs a texture coordinate across that width, while the front end moves
+  the coordinate to the middle of its range and draws a one-pixel GL line. Matching wide
+  lines needs geometry expansion rather than a GL line width, and desktop core profiles
+  commonly report an aliased width range of 1, so the limitation was documented rather than
+  changed blind.
+- Blend modes, blend factors, the alpha test and depth state were checked against their GX
+  encodings. No defect was found and none was modified: `kBlendSrc`/`kBlendDst` mirror the
+  hardware's asymmetric source and destination factor encoding deliberately.
+- Asset override: a replacement must equal the disc FST size exactly. A larger file would
+  move every following file in a read-only image, so a higher-resolution particle texture
+  cannot be delivered by this path. A rejected pack now names both sizes and points at
+  `runtime/docs/disc-mods.md`, which explains the two designs that could allow larger assets;
+  `disc_mods_test` covers the message.
+
+Requires a person in game, and is not established here: explosions and impact effects (shape,
+framing, whether every element appears), engine and exhaust trails, additive and subtractive
+blending against bright backgrounds, particle alpha edges and sorting against the world,
+effect timing and cadence, and visibility in both original 4:3 and experimental 16:9 at 1x
+and higher internal resolution.
+
 ### 2026-11-03 — current-thread pointer trace analysis and capture tooling
 
 The saved crash trace was read against the project's own analysis metadata. Instruction

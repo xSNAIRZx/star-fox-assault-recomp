@@ -199,8 +199,18 @@ bool init(const char* directory, const uint8_t* fst, size_t fst_size, std::strin
             return false;
         }
         const uint64_t replacement_size = fs::file_size(canonical_candidate, ec);
-        if (ec || replacement_size != size) {
-            error = "replacement size must match the disc file exactly: " + relative;
+        if (ec) {
+            error = "cannot read the size of a replacement file: " + relative;
+            return false;
+        }
+        if (replacement_size != size) {
+            // The overlay is written at the original disc offset and the guest asks the disc
+            // for the FST's length, so another size cannot be delivered here: a larger file
+            // would move every file after it, and the read-only image cannot be repacked.
+            // Higher-resolution art needs a container that carries its own sizes.
+            error = "replacement size must match the disc file exactly: " + relative + " (disc file " +
+                    std::to_string(size) + " bytes, replacement " + std::to_string(replacement_size) +
+                    "); a larger asset cannot be placed at the original disc offset - see runtime/docs/disc-mods.md";
             return false;
         }
         found.push_back({begin, begin + size, canonical_candidate});

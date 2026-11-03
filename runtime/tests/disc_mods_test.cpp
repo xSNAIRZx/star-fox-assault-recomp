@@ -100,6 +100,10 @@ int main() {
 
         write_file(mods / "data" / "texture.bin", "TOO-SMALL");
         require(!disc_mods::init(mods.string().c_str(), fst.data(), fst.size(), error), "wrong-size replacement was accepted");
+        require(error.find("disc file") != std::string::npos && error.find("replacement") != std::string::npos,
+                "size rejection did not report both sizes");
+        require(error.find("disc-mods.md") != std::string::npos,
+                "size rejection did not point at the documented override limit");
         require(disc_mods::count() == 0, "failed initialization left replacements active");
 
         const std::vector<uint8_t> traversal = make_fst("../escape.bin", 100, 8, false);
