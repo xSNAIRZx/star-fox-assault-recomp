@@ -43,17 +43,9 @@ The launcher also provides controller mapping, volume controls, session logs, sa
 
 *Settings rendered from the published launcher source using an empty profile. Choose your own image when setting up the launcher.*
 
-## Planned update path
+## Where the work is heading
 
-| Order | Focus | What the next step should deliver |
-| --- | --- | --- |
-| 1 | Gameplay stability | Reproduce and fix the disappearing first boss and current-thread-pointer crash; validate the first mission through completion. |
-| 2 | Picture quality | Check widescreen visibility and HUD proportions, resolution scaling, FXAA and output sharpness against original 4:3. |
-| 3 | Controls and audio | Test physical controllers, mappings, reconnects, music, sound effects and volume across missions. |
-| 4 | Launcher polish | Review fonts, spacing, artwork placement, navigation and build feedback across window sizes and display scaling. |
-| 5 | Release readiness | Repeat fresh setup, rebuild, cancellation, save backup and update checks on additional Windows PCs; publish the results. |
-
-This is a proposed priority order, not a release schedule. These items are planned, not completed fixes. Broader mission testing continues as stability improves. See [the full roadmap](ROADMAP.md) for completion criteria and longer-term ideas.
+The next steps are gameplay stability, picture quality, controls and audio, launcher polish and release readiness, in roughly that order. This is a proposed priority order, not a release schedule, and these items are planned work rather than completed fixes. See [the full roadmap](ROADMAP.md) for completion criteria, longer-term ideas and how to report a problem.
 
 ## Local files and updates
 
