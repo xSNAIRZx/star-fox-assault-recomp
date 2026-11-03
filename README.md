@@ -1,4 +1,4 @@
-# Star Fox Assault Recomp
+# Peregrine Forge — Star Fox Assault Recomp
 
 **Launcher brand: Peregrine Forge.** The game title identifies this independent fan project; Peregrine Forge is the launcher name.
 
