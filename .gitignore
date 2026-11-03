@@ -1,0 +1,7 @@
+# Local native builds and per-user launcher state are never part of the source repo.
+/build-desktop/
+/user-data/
+
+# Python runtime caches created by analysis and packaging tools.
+__pycache__/
+*.py[cod]

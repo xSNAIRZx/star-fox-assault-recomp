@@ -6,6 +6,8 @@ using System.Windows.Forms;
 
 internal static class LauncherBootstrap
 {
+    private const string ProductTitle = "Peregrine Forge | Star Fox Assault Recomp";
+
     [STAThread]
     private static int Main()
     {
@@ -15,7 +17,7 @@ internal static class LauncherBootstrap
         {
             MessageBox.Show(
                 "Launch-StarFoxAssault.ps1 was not found beside this application. Restore the launcher files and try again.",
-                "Star Fox Assault Recomp",
+                ProductTitle,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
             return 1;
@@ -27,7 +29,7 @@ internal static class LauncherBootstrap
         {
             MessageBox.Show(
                 "Windows PowerShell could not be found. The launcher needs the Windows PowerShell 5.1 component.",
-                "Star Fox Assault Recomp",
+                ProductTitle,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
             return 1;
@@ -55,7 +57,7 @@ internal static class LauncherBootstrap
         {
             MessageBox.Show(
                 "The launcher could not start Windows PowerShell.\r\n\r\n" + ex.Message,
-                "Star Fox Assault Recomp",
+                ProductTitle,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
             return 1;

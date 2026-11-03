@@ -3,6 +3,17 @@
 Scope: bounded setup, build and startup checks completed on one tested Windows PC.
 Passing checks here do not establish full-game compatibility.
 
+## Source-only branding update — 2026-11-03
+
+The launcher title, top-bar brand, About page, bootstrap error titles, README and credits now use
+Peregrine Forge as the launcher brand. The project and executable remain Star Fox Assault Recomp.
+The icon uses a matching PF monogram, regenerated at seven sizes and reviewed in a 256-pixel
+preview. The launcher itself was not opened for a visual check. No trademark registration is
+claimed.
+The PowerShell launcher and C# bootstrap each use centralized product-title values. `.gitignore`
+excludes local builds, user data and Python caches. Both PowerShell files parsed, bootstrap C#
+compilation succeeded, and `git diff --check` passed; no gameplay or launcher GUI checks were run.
+
 | Area | Result |
 | --- | --- |
 | Empty-cache online first build from the rc.2 source package | Passed |

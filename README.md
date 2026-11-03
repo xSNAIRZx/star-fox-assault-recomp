@@ -1,5 +1,7 @@
 # Star Fox Assault Recomp
 
+**Launcher brand: Peregrine Forge.** The game title identifies this independent fan project; Peregrine Forge is the launcher name.
+
 An experimental Windows x64 native recompilation project for the USA GameCube release **GF7E01**. The launcher imports your own ISO/CISO, recompiles its PowerPC code and builds a native Windows executable locally. The game image remains read-only. Windows 10 version 1903 or newer and an OpenGL 3.3-capable graphics driver are required.
 
 <p align="center">
@@ -12,9 +14,9 @@ An experimental Windows x64 native recompilation project for the USA GameCube re
 
 ## Launcher preview
 
-![Star Fox Assault Recomp launcher with the Arwing hangar artwork and Play Native action](docs/images/launcher-home.png)
+![Earlier Star Fox Assault Recomp launcher preview with the Arwing hangar artwork and Play Native action](docs/images/launcher-home.png)
 
-*Launcher home after a local build. The hangar is launcher artwork, not an in-game rendering. Game compatibility remains experimental.*
+*This rc.2 preview predates the Peregrine Forge label and PF monogram. The hangar is launcher artwork, not an in-game rendering. Game compatibility remains experimental.*
 
 ## Play from the shareable package
 

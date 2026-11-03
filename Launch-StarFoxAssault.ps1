@@ -7,6 +7,9 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 [Windows.Forms.Application]::EnableVisualStyles()
 
 $script:projectDir = $PSScriptRoot
+$script:launcherBrand = 'Peregrine Forge'
+$script:projectTitle = 'Star Fox Assault Recomp'
+$script:windowTitle = '{0} | {1}' -f $script:launcherBrand,$script:projectTitle
 $script:legacyAppDir = Join-Path $env:LOCALAPPDATA 'StarFoxAssaultRecomp'
 $script:legacySettingsPath = Join-Path $script:legacyAppDir 'settings.json'
 $script:portableProfileDir = Join-Path $script:projectDir 'user-data\launcher-profile'
@@ -641,7 +644,7 @@ function Open-Folder([string]$path) {
 }
 
 $script:form = New-Object Windows.Forms.Form
-$script:form.Text = 'Star Fox Assault Recomp'
+$script:form.Text = $script:windowTitle
 $script:form.StartPosition = 'Manual'
 $script:form.ClientSize = New-Object Drawing.Size(1480,900)
 $script:form.MinimumSize = New-Object Drawing.Size(1180,720)
@@ -713,27 +716,22 @@ $script:sidebar = $sidebar
 $sidebar.Dock = 'None'; $sidebar.Location = New-Object Drawing.Point(0,0); $sidebar.Size = New-Object Drawing.Size(1480,72)
   $sidebar.Anchor = 'Top,Left,Right'; $sidebar.BackColor = [Drawing.Color]::FromArgb(236,3,12,17)
 $script:form.Controls.Add($sidebar)
-  $brand = New-Label 'STAR FOX' 17 $true $script:colors.text
-  $brand.Location = New-Object Drawing.Point(26,11); $sidebar.Controls.Add($brand); $script:brandLabel = $brand
-  $brandSub = New-Label 'ASSAULT' 9 $true $script:colors.cyan
-  $brandSub.Location = New-Object Drawing.Point(28,42); $sidebar.Controls.Add($brandSub); $script:brandSubLabel = $brandSub
+  $brand = New-Label $script:launcherBrand.ToUpperInvariant() 12 $true $script:colors.text
+  $brand.Location = New-Object Drawing.Point(108,12); $sidebar.Controls.Add($brand); $script:brandLabel = $brand
+  $brandSub = New-Label 'GF7E01 RECOMP' 8 $true $script:colors.cyan
+  $brandSub.Location = New-Object Drawing.Point(109,40); $sidebar.Controls.Add($brandSub); $script:brandSubLabel = $brandSub
   $brandMark = New-Object Windows.Forms.Panel
   $brandMark.Location = New-Object Drawing.Point(27,9); $brandMark.Size = New-Object Drawing.Size(70,54)
   $brandMark.BackColor = [Drawing.Color]::Transparent
-  $wingCyan = $script:colors.cyan; $wingPurple = $script:colors.blue
+  $script:brandFont = New-Object Drawing.Font('Bahnschrift SemiBold',23,[Drawing.FontStyle]::Bold)
+  $script:brandBrush = New-Object Drawing.SolidBrush($script:colors.text)
+  $script:brandAccent = New-Object Drawing.Pen($script:colors.blue,2)
   $brandMark.Add_Paint({
     param($sender,$e)
     $e.Graphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $cyanPen = [Drawing.Pen]::new($wingCyan,3.2)
-    $purplePen = [Drawing.Pen]::new($wingPurple,2.2)
-    $cyanPen.LineJoin = [Drawing.Drawing2D.LineJoin]::Bevel
-    $purplePen.LineJoin = [Drawing.Drawing2D.LineJoin]::Bevel
-    try {
-      $e.Graphics.DrawLines($cyanPen,[Drawing.Point[]]@([Drawing.Point]::new(4,23),[Drawing.Point]::new(22,12),[Drawing.Point]::new(34,19),[Drawing.Point]::new(18,29),[Drawing.Point]::new(4,23)))
-      $e.Graphics.DrawLines($cyanPen,[Drawing.Point[]]@([Drawing.Point]::new(66,23),[Drawing.Point]::new(48,12),[Drawing.Point]::new(36,19),[Drawing.Point]::new(52,29),[Drawing.Point]::new(66,23)))
-      $e.Graphics.DrawLines($purplePen,[Drawing.Point[]]@([Drawing.Point]::new(20,30),[Drawing.Point]::new(35,40),[Drawing.Point]::new(50,30)))
-      $e.Graphics.DrawLine($purplePen,35,19,35,34)
-    } finally { $cyanPen.Dispose(); $purplePen.Dispose() }
+    $e.Graphics.DrawString('PF',$script:brandFont,$script:brandBrush,7,5)
+    $e.Graphics.DrawLine($script:brandAccent,10,44,58,44)
+    $e.Graphics.DrawLine($script:brandAccent,22,49,48,49)
   }.GetNewClosure())
   $sidebar.Controls.Add($brandMark); $script:brandMark = $brandMark
 
@@ -777,6 +775,8 @@ $script:form.Add_FormClosed({
   if ($script:backgroundRendered) { $script:backgroundRendered.Dispose(); $script:backgroundRendered = $null }
   if ($script:backgroundImage) { $script:backgroundImage.Dispose(); $script:backgroundImage = $null }
   if ($script:formIcon) { $script:formIcon.Dispose(); $script:formIcon = $null }
+  foreach ($resource in @($script:brandFont,$script:brandBrush,$script:brandAccent)) { if ($resource) { $resource.Dispose() } }
+  $script:brandFont = $null; $script:brandBrush = $null; $script:brandAccent = $null
 })
 $header = New-Object Windows.Forms.Panel
 $header.Dock = 'None'; $header.Height = 0
@@ -822,9 +822,9 @@ function Show-Page([string]$page) {
     $script:navButtons[$key].FlatAppearance.BorderColor = if ($selected) { $script:colors.blue } else { $script:colors.line }
     $script:navButtons[$key].ForeColor = if ($selected) { $script:colors.cyan } else { $script:colors.muted }
   }
-  if ($script:brandLabel) { $script:brandLabel.Visible = ($page -ne 'Home') }
-  if ($script:brandSubLabel) { $script:brandSubLabel.Visible = ($page -ne 'Home') }
-  if ($script:brandMark) { $script:brandMark.Visible = ($page -eq 'Home') }
+  if ($script:brandLabel) { $script:brandLabel.Visible = $true }
+  if ($script:brandSubLabel) { $script:brandSubLabel.Visible = $true }
+  if ($script:brandMark) { $script:brandMark.Visible = $true }
   $titles = @{Home='PLAY';Library='LIBRARY';Saves='MEMORY CARDS';Mods='MODS';Crashes='CRASHES';Settings='SETTINGS';About='ABOUT'}
   $script:pageTitle.Text = $titles[$page]
   switch ($page) {
@@ -1517,13 +1517,13 @@ function Build-AboutPage {
   Add-SectionHeader $script:content 'About this project' 'A community-built native recompilation prototype for Star Fox Assault.'
   $pageWidth=Get-ContentPageWidth
   $card=New-Card 30 112 $pageWidth 500
-  $heading=New-Label 'STAR FOX ASSAULT RECOMP' 22 $true $script:colors.cyan; $heading.Location=New-Object Drawing.Point(25,24); $card.Controls.Add($heading)
+  $heading=New-Label $script:launcherBrand.ToUpperInvariant() 22 $true $script:colors.cyan; $heading.Location=New-Object Drawing.Point(25,24); $card.Controls.Add($heading)
   $release=New-Label 'Version 0.2.0-rc.2 · native build prototype · validation is ongoing' 11 $true $script:colors.text; $release.Location=New-Object Drawing.Point(27,68); $card.Controls.Add($release)
-  $body=New-Label 'This launcher can inspect your own USA ISO/CISO, prepare its portable build tools, compile the native application, and keep launcher settings and runtime data in this project folder. Your game image is read in place and is never copied, patched, or modified.' 10 $false $script:colors.muted
+  $body=New-Label ("{0} is the launcher brand for {1}, an independent fan project. It can inspect your own USA ISO/CISO, prepare its portable build tools, compile the native application, and keep launcher settings and runtime data in this project folder. Your game image is read in place and is never copied, patched, or modified." -f $script:launcherBrand,$script:projectTitle) 10 $false $script:colors.muted
   $body.Location=New-Object Drawing.Point(27,112); $body.MaximumSize=New-Object Drawing.Size(($pageWidth-80),68); $body.AutoSize=$true; $card.Controls.Add($body)
   $limit=New-Label 'Known limitation: the current native runtime has not been verified through a complete playthrough and is known to fail during a boss encounter. This is not a finished or fully compatible game release.' 10 $false $script:colors.text
   $limit.Location=New-Object Drawing.Point(27,196); $limit.MaximumSize=New-Object Drawing.Size(($pageWidth-80),65); $limit.AutoSize=$true; $limit.ForeColor=$script:colors.text; $card.Controls.Add($limit)
-  $legal=New-Label 'You provide your own game image. No game image or Nintendo game assets are included. This community project is not affiliated with or endorsed by Nintendo.' 10 $false $script:colors.muted
+  $legal=New-Label ("You provide your own game image. No game image or Nintendo game assets are included. This community project is not affiliated with or endorsed by Nintendo or Namco. {0} is an unregistered project brand." -f $script:launcherBrand) 10 $false $script:colors.muted
   $legal.Location=New-Object Drawing.Point(27,275); $legal.MaximumSize=New-Object Drawing.Size(($pageWidth-80),55); $legal.AutoSize=$true; $card.Controls.Add($legal)
   $credits=New-Label 'Artwork: original generated concept art; its prompt and provenance are included beside the asset. App icon: original launcher artwork. Runtime fonts: replacement fonts based on Droid Sans, Copyright 2006–2014 Google Corporation, Apache License 2.0.' 9 $false $script:colors.muted
   $credits.Location=New-Object Drawing.Point(27,344); $credits.MaximumSize=New-Object Drawing.Size(($pageWidth-80),52); $credits.AutoSize=$true; $card.Controls.Add($credits)

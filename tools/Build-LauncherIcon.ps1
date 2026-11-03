@@ -16,19 +16,22 @@ foreach($size in $sizes){
     $edge=[Drawing.Pen]::new([Drawing.Color]::FromArgb(255,126,159,171),2)
     $cyan=[Drawing.Pen]::new([Drawing.Color]::FromArgb(255,70,224,244),4)
     $violet=[Drawing.Pen]::new([Drawing.Color]::FromArgb(255,145,117,250),3)
+    $markFont=[Drawing.Font]::new('Bahnschrift SemiBold',27,[Drawing.FontStyle]::Bold,[Drawing.GraphicsUnit]::Pixel)
+    $markBrush=[Drawing.SolidBrush]::new([Drawing.Color]::FromArgb(255,235,245,246))
     $cyan.LineJoin=[Drawing.Drawing2D.LineJoin]::Bevel
     $violet.LineJoin=[Drawing.Drawing2D.LineJoin]::Bevel
     try {
       $outline=[Drawing.PointF[]]@([Drawing.PointF]::new(12,2),[Drawing.PointF]::new(68,2),[Drawing.PointF]::new(78,12),[Drawing.PointF]::new(78,68),[Drawing.PointF]::new(68,78),[Drawing.PointF]::new(12,78),[Drawing.PointF]::new(2,68),[Drawing.PointF]::new(2,12))
       $graphics.FillPolygon($panel,$outline)
       $graphics.DrawPolygon($edge,$outline)
-      $left=[Drawing.PointF[]]@([Drawing.PointF]::new(10,34),[Drawing.PointF]::new(27,22),[Drawing.PointF]::new(38,30),[Drawing.PointF]::new(24,41),[Drawing.PointF]::new(10,34))
-      $right=[Drawing.PointF[]]@([Drawing.PointF]::new(70,34),[Drawing.PointF]::new(53,22),[Drawing.PointF]::new(42,30),[Drawing.PointF]::new(56,41),[Drawing.PointF]::new(70,34))
-      $graphics.DrawLines($cyan,$left)
-      $graphics.DrawLines($cyan,$right)
-      $graphics.DrawLines($violet,[Drawing.PointF[]]@([Drawing.PointF]::new(25,44),[Drawing.PointF]::new(40,57),[Drawing.PointF]::new(55,44)))
-      $graphics.DrawLine($violet,40,30,40,49)
-    } finally { $panel.Dispose(); $edge.Dispose(); $cyan.Dispose(); $violet.Dispose() }
+      $format=[Drawing.StringFormat]::GenericTypographic
+      $format.Alignment=[Drawing.StringAlignment]::Center
+      $format.LineAlignment=[Drawing.StringAlignment]::Center
+      $graphics.DrawString('PF',$markFont,$markBrush,[Drawing.RectangleF]::new(6,11,68,44),$format)
+      $graphics.DrawLine($cyan,24,59,56,59)
+      $graphics.DrawLine($violet,31,65,49,65)
+      $format.Dispose()
+    } finally { $panel.Dispose(); $edge.Dispose(); $cyan.Dispose(); $violet.Dispose(); $markFont.Dispose(); $markBrush.Dispose() }
     $bitmap.Save($stream,[Drawing.Imaging.ImageFormat]::Png)
     $frames.Add($stream.ToArray())
   } finally { $stream.Dispose(); $graphics.Dispose(); $bitmap.Dispose() }

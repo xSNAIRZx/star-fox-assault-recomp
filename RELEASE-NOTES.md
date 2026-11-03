@@ -6,6 +6,11 @@ No new package accompanies this work, and rc.2 remains the current experimental 
 two reported gameplay defects are still unresolved: no build of the game could be run here, so
 nothing below is a fix.
 
+The launcher now uses **Peregrine Forge** as its brand while retaining **Star Fox Assault Recomp**
+as the project and executable name. The launcher now uses a matching PF monogram icon. No
+trademark registration is claimed; this is a source branding update and
+does not change the current release package.
+
 The current-thread crash trace now has an explanation to test. `0x80136C60` lies inside
 `fn_80136C44`, and the reported address `0x3F0002C8` is `0x2C8` past `0x3F000000` — the float
 `0.5f` — in the word the SDK loads as the current-thread pointer, so a float was stored over a
