@@ -8,8 +8,9 @@ The original Star Fox: Assault game was published by Nintendo and developed by N
 - Analysis metadata workflow: **decomp-toolkit / dtk-template**. See `THIRD_PARTY_NOTICES.md`.
 - Launcher design, integration and original vector PF monogram icon: Star Fox Assault Recomp project contributors, with AI-assisted development. The icon is used as the Peregrine Forge launcher mark.
 - Hangar illustration: game-inspired artwork generated with built-in imagegen. Prompts are preserved alongside the artwork; it is not extracted game art.
+- Flight-deck illustration: original AI-assisted fan artwork generated for Peregrine Forge, showing the Star Fox team and spacecraft. The composition prompt is preserved beside the image; it is not extracted from the game.
 - Game system-font replacement: Droid Sans-derived resources, copyright Google, Apache-2.0; full notice in `assets/fonts/font-licenses.txt`.
-- Interface typography: Windows-provided Bahnschrift SemiBold and Segoe UI. Font files are not redistributed.
+- Launcher title typography: Orbitron, designed by The Orbitron Project Authors, bundled under the SIL Open Font License 1.1; license in `assets/fonts/orbitron-OFL.txt`. Other interface typography uses Windows-provided Bahnschrift SemiBold and Segoe UI.
 - SDL 2.30.9: zlib license, retained in `third_party_licenses/`.
 
 The optional first-build tool download uses pinned LLVM-MinGW, CMake, Ninja and Python releases from their official publishers. Their licenses remain with the downloaded distributions in the local tool cache. See `tools/portable-toolchain.json` for exact versions, source URLs and SHA-256 values.

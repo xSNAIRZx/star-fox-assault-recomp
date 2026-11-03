@@ -116,6 +116,8 @@ try {
   Add-PackageFile (Join-Path $projectDir 'assets\assault-launcher-background.png') 'assets/assault-launcher-background.png'
   Add-PackageFile (Join-Path $projectDir 'assets\assault-arwing-hangar.png') 'assets/assault-arwing-hangar.png'
   Add-PackageFile (Join-Path $projectDir 'assets\assault-arwing-hangar.prompt.txt') 'assets/assault-arwing-hangar.prompt.txt'
+  Add-PackageFile (Join-Path $projectDir 'assets\peregrine-assault-flightdeck.png') 'assets/peregrine-assault-flightdeck.png'
+  Add-PackageFile (Join-Path $projectDir 'assets\peregrine-assault-flightdeck.prompt.txt') 'assets/peregrine-assault-flightdeck.prompt.txt'
   Add-PackageFile (Join-Path $projectDir 'assets\assault-launcher.ico') 'assets/assault-launcher.ico'
   Add-SourceTree 'assets\fonts'
   Add-SourceTree 'tools'
@@ -151,7 +153,9 @@ try {
     'tools/native/assault-image-tool.exe','tools/portable-toolchain.json','release.json','LICENSE','CREDITS.md','RELEASE-NOTES.md','portable.txt','CMakeLists.txt','THIRD_PARTY_NOTICES.md',
     'assets/assault-launcher-background.png','assets/fonts/font_western.bin',
     'assets/assault-arwing-hangar.png','assets/assault-arwing-hangar.prompt.txt',
+    'assets/peregrine-assault-flightdeck.png','assets/peregrine-assault-flightdeck.prompt.txt',
     'assets/assault-launcher.ico',
+    'assets/fonts/Orbitron-Variable.ttf','assets/fonts/orbitron-OFL.txt',
     'assets/fonts/font_japanese.bin','assets/fonts/font-licenses.txt',
     'recomp/special_calls.txt','recomp/names.txt','recomp/idle.txt','recomp/hle.txt',
     'decomp/config/GF7E01/symbols.txt','decomp/config/GF7E01/build.sha1','runtime/CMakeLists.txt','runtime/LICENSE',
@@ -232,14 +236,16 @@ try {
   }
   $expectedAssets = @(
     'assets/assault-arwing-hangar.png','assets/assault-arwing-hangar.prompt.txt',
+    'assets/peregrine-assault-flightdeck.png','assets/peregrine-assault-flightdeck.prompt.txt',
     'assets/assault-launcher-background.png','assets/assault-launcher.ico',
+    'assets/fonts/Orbitron-Variable.ttf','assets/fonts/orbitron-OFL.txt',
     'assets/fonts/font-licenses.txt','assets/fonts/font_japanese.bin','assets/fonts/font_western.bin'
   ) | Sort-Object
   $actualAssets = @($allFiles | Where-Object { $_.StartsWith('assets/') } | Sort-Object)
   if (($actualAssets -join "`n") -cne ($expectedAssets -join "`n")) {
     throw "Unexpected asset payload: $($actualAssets -join ', ')"
   }
-  $approvedMediaFiles = @('assets/assault-arwing-hangar.png','assets/assault-launcher-background.png','assets/assault-launcher.ico','assets/fonts/font_japanese.bin','assets/fonts/font_western.bin')
+  $approvedMediaFiles = @('assets/assault-arwing-hangar.png','assets/peregrine-assault-flightdeck.png','assets/assault-launcher-background.png','assets/assault-launcher.ico','assets/fonts/font_japanese.bin','assets/fonts/font_western.bin')
   foreach ($relative in $allFiles) {
     $extension = [IO.Path]::GetExtension($relative).ToLowerInvariant()
     if ($extension -in $forbidden) { throw "Forbidden extension in archive: $relative" }

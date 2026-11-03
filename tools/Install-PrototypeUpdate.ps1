@@ -20,7 +20,7 @@ $logPath = Join-Path $logRoot ('install-' + $runId + '.json')
 $manifestName = 'SHA256SUMS.txt'
 $maxEntries = 4096
 $maxExpandedBytes = 512MB
-$allowedSourceExtensions = @('.c','.cc','.cpp','.cs','.h','.hh','.hpp','.inl','.cmake','.txt','.md','.py','.ps1','.cmd','.bat','.sh','.yml','.yaml','.json','.xml','.mm','.swift','.entitlements','.frag','.vert','.geom','.comp','.glsl','.glslinc','.inc','.rc','.def','.properties','.java','.kt','.gradle','.kts','.mk','.in','.manifest','.bin','.png','.ico','.sha1')
+$allowedSourceExtensions = @('.c','.cc','.cpp','.cs','.h','.hh','.hpp','.inl','.cmake','.txt','.md','.py','.ps1','.cmd','.bat','.sh','.yml','.yaml','.json','.xml','.mm','.swift','.entitlements','.frag','.vert','.geom','.comp','.glsl','.glslinc','.inc','.rc','.def','.properties','.java','.kt','.gradle','.kts','.mk','.in','.manifest','.bin','.png','.ico','.ttf','.sha1')
 $forbiddenExtensions = @('.iso','.ciso','.gcm','.dol','.rel','.raw','.elf','.dll','.lib','.obj','.o','.pdb')
 $requiredFiles = @(
   'Launch-StarFoxAssault.ps1','Start-StarFoxAssault.cmd','Star Fox Assault Recomp.exe',
@@ -28,6 +28,8 @@ $requiredFiles = @(
   'CMakeLists.txt','THIRD_PARTY_NOTICES.md',
   'README-PROTOTYPE.txt',$manifestName,'assets/assault-launcher-background.png',
   'assets/assault-arwing-hangar.png','assets/assault-arwing-hangar.prompt.txt','assets/assault-launcher.ico',
+  'assets/peregrine-assault-flightdeck.png','assets/peregrine-assault-flightdeck.prompt.txt',
+  'assets/fonts/Orbitron-Variable.ttf','assets/fonts/orbitron-OFL.txt',
   'assets/fonts/font_western.bin','assets/fonts/font_japanese.bin','assets/fonts/font-licenses.txt',
   'recomp/special_calls.txt','recomp/names.txt','recomp/idle.txt','recomp/hle.txt',
   'decomp/config/GF7E01/symbols.txt','decomp/config/GF7E01/build.sha1',
@@ -62,8 +64,10 @@ function Test-UpdatePath([string]$path) {
     '^assets/assault-launcher-background\.png$' { return $true }
     '^assets/assault-arwing-hangar\.png$' { return $true }
     '^assets/assault-arwing-hangar\.prompt\.txt$' { return $true }
+    '^assets/peregrine-assault-flightdeck\.png$' { return $true }
+    '^assets/peregrine-assault-flightdeck\.prompt\.txt$' { return $true }
     '^assets/assault-launcher\.ico$' { return $true }
-    '^assets/fonts/(font_western\.bin|font_japanese\.bin|font-licenses\.txt)$' { return $true }
+    '^assets/fonts/(font_western\.bin|font_japanese\.bin|font-licenses\.txt|Orbitron-Variable\.ttf|orbitron-OFL\.txt)$' { return $true }
     '^recomp/(special_calls|names|idle|hle)\.txt$' { return $true }
     '^decomp/config/GF7E01/([A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(txt|yml|yaml|sha1)$' { return $true }
     '^runtime/([A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+$' {

@@ -14,9 +14,9 @@ An experimental Windows x64 native recompilation project for the USA GameCube re
 
 ## Launcher preview
 
-![Earlier Star Fox Assault Recomp launcher preview with the Arwing hangar artwork and Play Native action](docs/images/launcher-home.png)
+![Peregrine Forge flight deck with Star Fox Assault team artwork and native build controls](docs/images/launcher-home.png)
 
-*This rc.2 preview predates the Peregrine Forge label and PF monogram. The hangar is launcher artwork, not an in-game rendering. Game compatibility remains experimental.*
+*The flight-deck artwork is an original AI-assisted fan-project illustration, not an in-game rendering. Game compatibility remains experimental.*
 
 ## Play from the shareable package
 
@@ -27,7 +27,7 @@ An experimental Windows x64 native recompilation project for the USA GameCube re
 
 The first build needs internet access, approximately 280 MB of portable build-tool downloads plus SDL source, and several GB of free disk space. Allow at least 3 GB free; additional space is useful for logs, backups and rebuilds. The launcher downloads pinned LLVM-MinGW, CMake, Ninja and Python releases, verifies their SHA-256 checksums, and keeps them inside `user-data/build-tools/`. It uses Windows PowerShell 5.1 and .NET Framework provided by Windows. No administrator installation, Visual Studio or Dolphin is required for the native build. Later builds reuse the local cache.
 
-The distribution contains source, analysis metadata, original launcher artwork, licensed replacement fonts and a standalone image inspector. It excludes game images, extracted game executables, generated game code, precompiled game binaries, personal settings and saves. Each recipient supplies their own supported image and builds locally.
+The distribution contains source, original launcher artwork, licensed display and replacement fonts, and a standalone image inspector. It excludes game images, extracted game executables, generated game code, precompiled game binaries, personal settings and saves. Each recipient supplies their own supported image and builds locally.
 
 ## Experimental status
 
@@ -41,9 +41,7 @@ The launcher also provides controller mapping, volume controls, session logs, sa
 
 ## Graphics and controls
 
-![Launcher settings showing internal resolution, aspect ratio, anti-aliasing, output filter, volume and controller options](docs/images/launcher-settings.png)
-
-*Settings rendered from the published launcher source using an empty profile. Choose your own image when setting up the launcher.*
+Choose the internal resolution, 4:3 or experimental 16:9 aspect ratio, anti-aliasing, output filtering, volume, fullscreen, VSync and controller deadzone from Settings. Original 4:3 preserves the intended game composition; Sharp with AA Off keeps text crisp.
 
 At the game's health-and-safety screen, focus the game window and press **Space** or **A** (or left-click) to continue. **Enter** sends Start; **B** or **Z** sends Back; **Escape** exits the game. Arrow keys steer, **I/J/K/L** navigate the D-pad, and **X/C/S/D/Q/W** provide the legacy action, face, Z and shoulder inputs. Mouse left/right/middle clicks send A/B/X. Press **F9** to capture the mouse and steer with relative movement; press F9 again or switch away from the game to release it. A connected controller works as well.
 

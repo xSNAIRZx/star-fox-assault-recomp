@@ -90,13 +90,22 @@ $script:colors = @{
   line = [Drawing.Color]::FromArgb(112,137,145)
   text = [Drawing.Color]::FromArgb(235,245,246)
   muted = [Drawing.Color]::FromArgb(143,170,177)
-  blue = [Drawing.Color]::FromArgb(105,101,235)
+  blue = [Drawing.Color]::FromArgb(61,202,222)
   cyan = [Drawing.Color]::FromArgb(61,202,222)
   green = [Drawing.Color]::FromArgb(76,213,157)
   red = [Drawing.Color]::FromArgb(238,91,86)
   steelLight = [Drawing.Color]::FromArgb(193,207,210)
   steelShade = [Drawing.Color]::FromArgb(42,67,74)
-  selection = [Drawing.Color]::FromArgb(36,41,91)
+  selection = [Drawing.Color]::FromArgb(15,47,55)
+}
+$script:flightDisplayFonts = [Drawing.Text.PrivateFontCollection]::new()
+$script:flightDisplayFontFamily = $null
+$script:flightDisplayFontPath = Join-Path $script:projectDir 'assets\fonts\Orbitron-Variable.ttf'
+if (Test-Path -LiteralPath $script:flightDisplayFontPath -PathType Leaf) {
+  try {
+    $script:flightDisplayFonts.AddFontFile($script:flightDisplayFontPath)
+    if ($script:flightDisplayFonts.Families.Count -gt 0) { $script:flightDisplayFontFamily = $script:flightDisplayFonts.Families[0] }
+  } catch { $script:flightDisplayFontFamily = $null }
 }
 
 function Save-Settings {
@@ -163,6 +172,8 @@ function New-Button([string]$text, [int]$width = 150, [bool]$primary = $false) {
   $b.FlatAppearance.BorderSize = 1
   $b.FlatAppearance.BorderColor = if ($primary) { $script:colors.cyan } else { $script:colors.line }
   $b.BackColor = if ($primary) { [Drawing.Color]::FromArgb(10,104,119) } else { $script:colors.panel2 }
+  $b.FlatAppearance.MouseOverBackColor = if ($primary) { [Drawing.Color]::FromArgb(12,126,142) } else { [Drawing.Color]::FromArgb(20,56,65) }
+  $b.FlatAppearance.MouseDownBackColor = [Drawing.Color]::FromArgb(10,82,94)
   $b.ForeColor = $script:colors.text
   $b.Font = New-Object Drawing.Font('Bahnschrift SemiBold', 10)
   $b.Cursor = [Windows.Forms.Cursors]::Hand
@@ -697,8 +708,11 @@ function Open-Folder([string]$path) {
 $script:form = New-Object Windows.Forms.Form
 $script:form.Text = $script:windowTitle
 $script:form.StartPosition = 'Manual'
-$script:form.ClientSize = New-Object Drawing.Size(1480,900)
-$script:form.MinimumSize = New-Object Drawing.Size(1180,720)
+$workArea = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+$initialWidth = [Math]::Min(1480,[Math]::Max(1100,$workArea.Width - 36))
+$initialHeight = [Math]::Min(900,[Math]::Max(680,$workArea.Height - 60))
+$script:form.ClientSize = New-Object Drawing.Size($initialWidth,$initialHeight)
+$script:form.MinimumSize = New-Object Drawing.Size([Math]::Min(1180,$initialWidth),[Math]::Min(720,$initialHeight))
 $script:form.BackColor = $script:colors.base
 $script:formIcon = $null
 $script:iconPath = Join-Path $script:projectDir 'assets\assault-launcher.ico'
@@ -719,7 +733,10 @@ if (Test-Path -LiteralPath $script:iconPath -PathType Leaf) {
 $script:backgroundImage = $null
 $script:backgroundRendered = $null
 $script:backgroundResizeTimer = $null
-$script:backgroundPath = Join-Path $script:projectDir 'assets\assault-arwing-hangar.png'
+$script:backgroundPath = Join-Path $script:projectDir 'assets\peregrine-assault-flightdeck.png'
+if (-not (Test-Path -LiteralPath $script:backgroundPath -PathType Leaf)) {
+  $script:backgroundPath = Join-Path $script:projectDir 'assets\assault-arwing-hangar.png'
+}
 if (-not (Test-Path -LiteralPath $script:backgroundPath -PathType Leaf)) {
   $script:backgroundPath = Join-Path $script:projectDir 'assets\assault-launcher-background.png'
 }
@@ -736,7 +753,10 @@ function Update-LauncherBackground {
   $scale = [Math]::Max(($width / [double]$script:backgroundImage.Width),($height / [double]$script:backgroundImage.Height))
   $drawWidth = [int][Math]::Ceiling($script:backgroundImage.Width * $scale)
   $drawHeight = [int][Math]::Ceiling($script:backgroundImage.Height * $scale)
-  $drawX = [int][Math]::Floor(($width - $drawWidth) / 2.0)
+  # The art keeps its characters and craft near the right edge, with deliberate empty
+  # hangar space on the left. Anchor the cover crop there so narrower windows preserve
+  # the full squad instead of trimming the outer Arwing.
+  $drawX = $width - $drawWidth
   $drawY = [int][Math]::Floor(($height - $drawHeight) / 2.0)
   $rendered = [Drawing.Bitmap]::new($width,$height,[Drawing.Imaging.PixelFormat]::Format32bppPArgb)
   $graphics = [Drawing.Graphics]::FromImage($rendered)
@@ -759,20 +779,28 @@ if ($script:backgroundImage) { Update-LauncherBackground }
 $script:form.ForeColor = $script:colors.text
 $script:form.Font = New-Object Drawing.Font('Segoe UI',10)
 $script:form.AutoScaleMode = 'Dpi'
-$workArea = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-$script:form.Location = New-Object Drawing.Point(($workArea.Left + [Math]::Max(0,($workArea.Width - 1480) / 2)),($workArea.Top + [Math]::Max(0,($workArea.Height - 900) / 2)))
+$script:form.Location = New-Object Drawing.Point(($workArea.Left + [Math]::Max(0,($workArea.Width - $initialWidth) / 2)),($workArea.Top + [Math]::Max(0,($workArea.Height - $initialHeight) / 2)))
 
+$script:sidebarWidth = 258
 $sidebar = New-Object Windows.Forms.Panel
 $script:sidebar = $sidebar
-$sidebar.Dock = 'None'; $sidebar.Location = New-Object Drawing.Point(0,0); $sidebar.Size = New-Object Drawing.Size(1480,72)
-  $sidebar.Anchor = 'Top,Left,Right'; $sidebar.BackColor = [Drawing.Color]::FromArgb(236,3,12,17)
+$sidebar.Dock = 'None'; $sidebar.Location = New-Object Drawing.Point(0,0); $sidebar.Size = New-Object Drawing.Size($script:sidebarWidth,$script:form.ClientSize.Height)
+$sidebar.Anchor = 'Top,Bottom,Left'; $sidebar.BackColor = [Drawing.Color]::FromArgb(246,4,11,15)
+$sidebar.Add_Paint({
+  param($sender,$e)
+  $w=$sender.ClientSize.Width; $h=$sender.ClientSize.Height
+  $edge=[Drawing.Pen]::new([Drawing.Color]::FromArgb(80,61,202,222),1)
+  $glow=[Drawing.Pen]::new([Drawing.Color]::FromArgb(150,61,202,222),2)
+  try { $e.Graphics.DrawLine($edge,$w-1,0,$w-1,$h); $e.Graphics.DrawLine($glow,$w-3,20,$w-3,[Math]::Min(90,$h-20)) }
+  finally { $edge.Dispose();$glow.Dispose() }
+})
 $script:form.Controls.Add($sidebar)
-  $brand = New-Label $script:launcherBrand.ToUpperInvariant() 12 $true $script:colors.text
-  $brand.Location = New-Object Drawing.Point(108,12); $sidebar.Controls.Add($brand); $script:brandLabel = $brand
-  $brandSub = New-Label 'GF7E01 RECOMP' 8 $true $script:colors.cyan
-  $brandSub.Location = New-Object Drawing.Point(109,40); $sidebar.Controls.Add($brandSub); $script:brandSubLabel = $brandSub
+  $brand = New-Label 'PEREGRINE' 13 $true $script:colors.text
+  $brand.Location = New-Object Drawing.Point(86,20); $sidebar.Controls.Add($brand); $script:brandLabel = $brand
+  $brandSub = New-Label 'FORGE  /  GF7E01' 8 $true $script:colors.cyan
+  $brandSub.Location = New-Object Drawing.Point(87,48); $sidebar.Controls.Add($brandSub); $script:brandSubLabel = $brandSub
   $brandMark = New-Object Windows.Forms.Panel
-  $brandMark.Location = New-Object Drawing.Point(27,9); $brandMark.Size = New-Object Drawing.Size(70,54)
+  $brandMark.Location = New-Object Drawing.Point(19,14); $brandMark.Size = New-Object Drawing.Size(60,54)
   $brandMark.BackColor = [Drawing.Color]::Transparent
   $script:brandFont = New-Object Drawing.Font('Bahnschrift SemiBold',23,[Drawing.FontStyle]::Bold)
   $script:brandBrush = New-Object Drawing.SolidBrush($script:colors.text)
@@ -780,22 +808,22 @@ $script:form.Controls.Add($sidebar)
   $brandMark.Add_Paint({
     param($sender,$e)
     $e.Graphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $e.Graphics.DrawString('PF',$script:brandFont,$script:brandBrush,7,5)
-    $e.Graphics.DrawLine($script:brandAccent,10,44,58,44)
-    $e.Graphics.DrawLine($script:brandAccent,22,49,48,49)
+    $e.Graphics.DrawString('PF',$script:brandFont,$script:brandBrush,5,5)
+    $e.Graphics.DrawLine($script:brandAccent,6,44,52,44)
+    $e.Graphics.DrawLine($script:brandAccent,16,49,43,49)
   }.GetNewClosure())
   $sidebar.Controls.Add($brandMark); $script:brandMark = $brandMark
 
 $script:content = New-Object Windows.Forms.Panel
-$script:content.Dock = 'None'; $script:content.Location = New-Object Drawing.Point(0,72)
-$script:content.Size = New-Object Drawing.Size(1480,828); $script:content.Anchor = 'Top,Bottom,Left,Right'
+$script:content.Dock = 'None'; $script:content.Location = New-Object Drawing.Point($script:sidebarWidth,0)
+$script:content.Size = New-Object Drawing.Size([Math]::Max(880,$script:form.ClientSize.Width-$script:sidebarWidth),$script:form.ClientSize.Height); $script:content.Anchor = 'Top,Bottom,Left,Right'
 $script:content.BackColor = [Drawing.Color]::Transparent; $script:content.AutoScroll = $true
 $script:form.Controls.Add($script:content)
 $script:form.Add_Resize({
   if ($script:form.WindowState -ne [Windows.Forms.FormWindowState]::Minimized) {
-    $script:sidebar.Width = $script:form.ClientSize.Width
-    $script:content.Location = New-Object Drawing.Point(0,$script:sidebar.Height)
-    $script:content.Size = New-Object Drawing.Size($script:form.ClientSize.Width,[Math]::Max(100,$script:form.ClientSize.Height - $script:sidebar.Height))
+    $script:sidebar.Height = $script:form.ClientSize.Height
+    $script:content.Location = New-Object Drawing.Point($script:sidebarWidth,0)
+    $script:content.Size = New-Object Drawing.Size([Math]::Max(880,$script:form.ClientSize.Width - $script:sidebarWidth),[Math]::Max(100,$script:form.ClientSize.Height))
     Update-StatusLabelBounds
     if ($script:backgroundResizeTimer) { $script:backgroundResizeTimer.Stop(); $script:backgroundResizeTimer.Start() }
   }
@@ -803,9 +831,9 @@ $script:form.Add_Resize({
 $script:form.Add_Shown({
   # Rebuild after the first DPI pass so the overview uses the real client dimensions.
   $script:form.PerformLayout()
-  $script:sidebar.Width = $script:form.ClientSize.Width
-  $script:content.Location = New-Object Drawing.Point(0,$script:sidebar.Height)
-  $script:content.Size = New-Object Drawing.Size($script:form.ClientSize.Width,[Math]::Max(100,$script:form.ClientSize.Height - $script:sidebar.Height))
+  $script:sidebar.Height = $script:form.ClientSize.Height
+  $script:content.Location = New-Object Drawing.Point($script:sidebarWidth,0)
+  $script:content.Size = New-Object Drawing.Size([Math]::Max(880,$script:form.ClientSize.Width - $script:sidebarWidth),[Math]::Max(100,$script:form.ClientSize.Height))
   Update-LauncherBackground
   Update-StatusLabelBounds
   $script:sidebar.BringToFront()
@@ -826,54 +854,51 @@ $script:form.Add_FormClosed({
   if ($script:backgroundRendered) { $script:backgroundRendered.Dispose(); $script:backgroundRendered = $null }
   if ($script:backgroundImage) { $script:backgroundImage.Dispose(); $script:backgroundImage = $null }
   if ($script:formIcon) { $script:formIcon.Dispose(); $script:formIcon = $null }
+  if ($script:flightDisplayFonts) { $script:flightDisplayFonts.Dispose(); $script:flightDisplayFonts = $null; $script:flightDisplayFontFamily = $null }
   foreach ($resource in @($script:brandFont,$script:brandBrush,$script:brandAccent)) { if ($resource) { $resource.Dispose() } }
   $script:brandFont = $null; $script:brandBrush = $null; $script:brandAccent = $null
 })
-$script:navRowEnd = 232
-$script:statusLabel = New-Label '' 10 $true $script:colors.muted
-$script:statusLabel.AutoSize = $false; $script:statusLabel.TextAlign = 'MiddleRight'
-$script:statusLabel.AutoEllipsis = $true; $script:statusLabel.Size = New-Object Drawing.Size(240,35)
+$railLabel=New-Label 'SYSTEM STATUS' 8 $true $script:colors.muted
+$railLabel.Location=New-Object Drawing.Point(20,548); $sidebar.Controls.Add($railLabel)
+$script:statusLabel = New-Label 'LOCAL PROJECT' 9 $true $script:colors.cyan
+$script:statusLabel.AutoSize = $false; $script:statusLabel.TextAlign = 'MiddleLeft'; $script:statusLabel.AutoEllipsis = $true
+$script:statusLabel.BackColor=$script:colors.panel; $script:statusLabel.Padding=New-Object Windows.Forms.Padding(10,0,6,0)
+$script:statusLabel.BorderStyle='FixedSingle'; $script:statusLabel.Size = New-Object Drawing.Size(220,38)
 $sidebar.Controls.Add($script:statusLabel)
 $script:statusTip = New-Object Windows.Forms.ToolTip
 $script:statusTip.AutoPopDelay = 20000; $script:statusTip.InitialDelay = 400; $script:statusTip.ReshowDelay = 100
-# Status messages carry error details, so they start after the nav row instead of at a fixed
-# x, and the tooltip keeps the whole message reachable when the sidebar is narrow.
+# Status messages carry error details; the rail tooltip retains their full text when it clips.
 function Update-StatusLabelBounds {
   if (-not $script:statusLabel) { return }
-  $left = [Math]::Max(24,$script:navRowEnd + 20)
-  $available = $script:sidebar.Width - $left - 16
-  if ($available -lt 140) { $script:statusLabel.Visible = $false; return }
-  $script:statusLabel.Visible = $true
-  $script:statusLabel.Location = New-Object Drawing.Point($left,18)
-  $script:statusLabel.Size = New-Object Drawing.Size($available,35)
+  $script:statusLabel.Location = [Drawing.Point]::new(18,[Math]::Max(570,$script:sidebar.Height - 62))
+  $script:statusLabel.Size = [Drawing.Size]::new(($script:sidebarWidth - 36),38)
 }
+Update-StatusLabelBounds
 
 $navItems = @(
-  @{key='Home';label='PLAY';width=82},
-  @{key='Library';label='LIBRARY';width=102},
-  @{key='Saves';label='MEMORY CARDS';width=142},
-  @{key='Mods';label='MODS';width=82},
-  @{key='Crashes';label='CRASHES';width=90},
-  @{key='Settings';label='SETTINGS';width=112}
+  @{key='Home';label='FLIGHT DECK'},
+  @{key='Library';label='GAME LIBRARY'},
+  @{key='Saves';label='SAVE ARCHIVE'},
+  @{key='Mods';label='MOD LIBRARY'},
+  @{key='Crashes';label='CRASH REPORTS'},
+  @{key='Settings';label='SYSTEMS & CONTROLS'},
+  @{key='About';label='ABOUT PEREGRINE FORGE'}
 )
 $script:navButtons = @{}
-$navX = 232
+$navSection=New-Label 'NAVIGATION' 8 $true $script:colors.muted
+$navSection.Location=New-Object Drawing.Point(21,112); $sidebar.Controls.Add($navSection)
+$navY = 140
 foreach ($item in $navItems) {
   $b = New-Object Windows.Forms.Button
-  $b.Text = $item.label; $b.Tag = $item.key; $b.Location = New-Object Drawing.Point($navX,13)
-  $b.Size = New-Object Drawing.Size($item.width,44); $b.FlatStyle = 'Flat'; $b.FlatAppearance.BorderSize = 0
-  $b.TextAlign = 'MiddleCenter'; $b.BackColor = [Drawing.Color]::Transparent; $b.ForeColor = $script:colors.muted
+  $b.Text = $item.label; $b.Tag = $item.key; $b.Location = New-Object Drawing.Point(14,$navY)
+  $b.Size = [Drawing.Size]::new(($script:sidebarWidth - 28),46); $b.FlatStyle = 'Flat'; $b.FlatAppearance.BorderSize = 0
+  $b.TextAlign = 'MiddleLeft'; $b.Padding=New-Object Windows.Forms.Padding(14,0,4,0)
+  $b.BackColor = [Drawing.Color]::Transparent; $b.ForeColor = $script:colors.muted
+  $b.FlatAppearance.MouseOverBackColor=[Drawing.Color]::FromArgb(14,38,45)
   $b.Font = New-Object Drawing.Font('Bahnschrift SemiBold',10); $b.Cursor = [Windows.Forms.Cursors]::Hand
   $b.Add_Click({ Show-Page ([string]$this.Tag) })
-  $sidebar.Controls.Add($b); $script:navButtons[$item.key] = $b; $navX += $item.width + 10
+  $sidebar.Controls.Add($b); $script:navButtons[$item.key] = $b; $navY += 52
 }
-$aboutNav = New-Object Windows.Forms.Button
-$aboutNav.Text='ABOUT'; $aboutNav.Tag='About'; $aboutNav.Location=New-Object Drawing.Point($navX,13); $aboutNav.Size=New-Object Drawing.Size(88,44)
-$aboutNav.FlatStyle='Flat'; $aboutNav.FlatAppearance.BorderSize=0; $aboutNav.TextAlign='MiddleCenter'
-$aboutNav.BackColor=[Drawing.Color]::Transparent; $aboutNav.ForeColor=$script:colors.muted
-$aboutNav.Font=New-Object Drawing.Font('Bahnschrift SemiBold',10); $aboutNav.Cursor=[Windows.Forms.Cursors]::Hand
-$aboutNav.Add_Click({Show-Page 'About'}); $sidebar.Controls.Add($aboutNav); $script:navButtons['About']=$aboutNav
-$script:navRowEnd = $navX + $aboutNav.Width
 Update-StatusLabelBounds
 
 function Show-Page([string]$page) {
@@ -902,77 +927,88 @@ function Show-Page([string]$page) {
 }
 
 function Build-HomePage {
-  $pageWidth = [Math]::Max(880,$script:form.ClientSize.Width)
-  $pageHeight = [Math]::Max(600,$script:form.ClientSize.Height - $script:sidebar.Height)
+  $pageWidth = [Math]::Max(880,$script:content.ClientSize.Width)
+  $pageHeight = [Math]::Max(640,$script:content.ClientSize.Height)
   $scene = New-Object Windows.Forms.Panel
   $scene.Location = New-Object Drawing.Point(0,0); $scene.Size = New-Object Drawing.Size($pageWidth,$pageHeight)
   $scene.Anchor = 'Top,Bottom,Left,Right'; $scene.BackColor = [Drawing.Color]::Transparent
   $scene.Add_Paint({
     param($sender,$e)
     $w = $sender.ClientSize.Width; $h = $sender.ClientSize.Height
-    $left = [Drawing.Rectangle]::new(0,0,[Math]::Min(760,$w),$h)
-    $leftBrush = New-Object Drawing.Drawing2D.LinearGradientBrush($left,[Drawing.Color]::FromArgb(220,3,12,17),[Drawing.Color]::FromArgb(0,3,12,17),[Drawing.Drawing2D.LinearGradientMode]::Horizontal)
+    $left = [Drawing.Rectangle]::new(0,0,[Math]::Min(650,$w),$h)
+    $leftBrush = New-Object Drawing.Drawing2D.LinearGradientBrush($left,[Drawing.Color]::FromArgb(218,4,11,15),[Drawing.Color]::FromArgb(0,4,11,15),[Drawing.Drawing2D.LinearGradientMode]::Horizontal)
     $e.Graphics.FillRectangle($leftBrush,$left); $leftBrush.Dispose()
-    $bottom = [Drawing.Rectangle]::new(0,[Math]::Max(0,$h-245),$w,[Math]::Min(245,$h))
-    $bottomBrush = New-Object Drawing.Drawing2D.LinearGradientBrush($bottom,[Drawing.Color]::FromArgb(0,3,12,17),[Drawing.Color]::FromArgb(235,3,12,17),[Drawing.Drawing2D.LinearGradientMode]::Vertical)
+    $titleY = [Math]::Max(176,[int]($h * 0.32))
+    $titleField = [Drawing.Rectangle]::new(16,[Math]::Max(0,$titleY - 42),[Math]::Min(570,$w - 16),204)
+    $titleBrush = [Drawing.Drawing2D.LinearGradientBrush]::new($titleField,[Drawing.Color]::FromArgb(196,4,11,15),[Drawing.Color]::FromArgb(18,4,11,15),[Drawing.Drawing2D.LinearGradientMode]::Horizontal)
+    $e.Graphics.FillRectangle($titleBrush,$titleField); $titleBrush.Dispose()
+    $bottom = [Drawing.Rectangle]::new(0,[Math]::Max(0,$h-260),$w,[Math]::Min(260,$h))
+    $bottomBrush = New-Object Drawing.Drawing2D.LinearGradientBrush($bottom,[Drawing.Color]::FromArgb(0,4,11,15),[Drawing.Color]::FromArgb(235,4,11,15),[Drawing.Drawing2D.LinearGradientMode]::Vertical)
     $e.Graphics.FillRectangle($bottomBrush,$bottom); $bottomBrush.Dispose()
-    $rule = New-Object Drawing.Pen([Drawing.Color]::FromArgb(125,61,202,222),1)
-    $e.Graphics.DrawLine($rule,42,[Math]::Max(0,$h-126),[Math]::Min(730,$w-40),[Math]::Max(0,$h-126)); $rule.Dispose()
+    $rule = New-Object Drawing.Pen([Drawing.Color]::FromArgb(95,61,202,222),1)
+    $e.Graphics.DrawLine($rule,36,88,[Math]::Min($w-36,450),88)
+    $e.Graphics.DrawLine($rule,36,[Math]::Max(0,$h-224),[Math]::Min($w-36,660),[Math]::Max(0,$h-224))
+    $rule.Dispose()
   })
   $script:content.Controls.Add($scene)
 
-  $eyebrow = New-Label 'GAMECUBE RECOMPILATION' 10 $true $script:colors.cyan
-  $eyebrowY = $pageHeight - 366
-  $eyebrow.Location = New-Object Drawing.Point(44,$eyebrowY); $eyebrow.Anchor = 'Bottom,Left'; $scene.Controls.Add($eyebrow)
-  $name = New-Label 'STAR FOX' 36 $true
-  $nameY = $pageHeight - 330
-  $name.Location = New-Object Drawing.Point(40,$nameY); $name.Anchor = 'Bottom,Left'; $scene.Controls.Add($name)
-  $name2 = New-Label 'ASSAULT' 43 $true $script:colors.cyan
-  $name2Y = $pageHeight - 282
-  $name2.Location = New-Object Drawing.Point(40,$name2Y); $name2.Anchor = 'Bottom,Left'; $scene.Controls.Add($name2)
-  $desc = New-Label ('{0}  ·  GAMEPLAY VALIDATION IN PROGRESS' -f (Get-PlaytimeText)) 10 $false $script:colors.text
-  $descY = $pageHeight - 190
-  $desc.Location = New-Object Drawing.Point(44,$descY); $desc.Anchor = 'Bottom,Left'; $scene.Controls.Add($desc)
-  $startupHint = New-Label 'QUICK CONTROLS  ·  Space / A or left-click continues  ·  F9 captures mouse flight controls' 9 $true $script:colors.cyan
-  $startupHint.Location = New-Object Drawing.Point(44,($pageHeight - 151)); $startupHint.Anchor = 'Bottom,Left'; $scene.Controls.Add($startupHint)
+  $eyebrow = New-Label 'PEREGRINE FORGE  /  FLIGHT SYSTEMS' 9 $true $script:colors.cyan
+  $eyebrow.Location = New-Object Drawing.Point(38,35); $scene.Controls.Add($eyebrow)
+  $titleY = [Math]::Max(176,[int]($pageHeight * 0.32))
+  $eyebrowTitle=New-Label 'GAMECUBE RECOMPILATION' 9 $true $script:colors.muted
+  $eyebrowTitle.BackColor = $script:colors.base
+  $eyebrowTitle.Location=New-Object Drawing.Point(40,($titleY-35)); $scene.Controls.Add($eyebrowTitle)
+  $name = New-Label 'STAR FOX' 28 $true
+  $name.BackColor = $script:colors.base
+  if ($script:flightDisplayFontFamily) { $name.Font = [Drawing.Font]::new($script:flightDisplayFontFamily,28,[Drawing.FontStyle]::Bold) }
+  $name.Location = New-Object Drawing.Point(35,$titleY); $scene.Controls.Add($name)
+  $name2 = New-Label 'ASSAULT' 30 $true $script:colors.cyan
+  $name2.BackColor = $script:colors.base
+  if ($script:flightDisplayFontFamily) { $name2.Font = [Drawing.Font]::new($script:flightDisplayFontFamily,30,[Drawing.FontStyle]::Bold) }
+  $name2.Location = New-Object Drawing.Point(35,($titleY+47)); $scene.Controls.Add($name2)
+  $validation=New-Label 'EXPERIMENTAL NATIVE BUILD  ·  GAMEPLAY VALIDATION IN PROGRESS' 9 $false $script:colors.muted
+  $validation.BackColor = $script:colors.base
+  $validation.Location=New-Object Drawing.Point(40,($titleY+122)); $scene.Controls.Add($validation)
 
-  $buildTitle = New-Label 'BUILD' 10 $true $script:colors.muted
-  $infoTitleY = $pageHeight - 103
-  $infoValueY = $pageHeight - 81
-  $buildTitle.Location = New-Object Drawing.Point(44,$infoTitleY); $buildTitle.Anchor = 'Bottom,Left'; $scene.Controls.Add($buildTitle)
+  $cardY=[Math]::Max(470,$pageHeight-206)
+  $cardWidth=[Math]::Min(480,$pageWidth-300)
+  $statusCard=New-Card 36 $cardY $cardWidth 132; $scene.Controls.Add($statusCard)
   $nativeStatus = Get-NativeStatus
-  $buildValueText = if ($nativeStatus -eq 'UPDATE AVAILABLE') { 'UPDATE AVAILABLE' } elseif ($nativeStatus -eq 'NOT BUILT') { 'NOT BUILT' } else { 'CURRENT' }
+  $buildTitle = New-Label 'NATIVE BUILD' 8 $true $script:colors.muted
+  $buildTitle.Location = New-Object Drawing.Point(19,18); $statusCard.Controls.Add($buildTitle)
+  $buildValueText = if ($nativeStatus -eq 'UPDATE AVAILABLE') { 'REBUILD REQUIRED' } elseif ($nativeStatus -eq 'NOT BUILT') { 'NOT BUILT' } else { 'CURRENT' }
   $buildColor = if ($nativeStatus -eq 'NOT BUILT') { $script:colors.red } elseif ($nativeStatus -eq 'UPDATE AVAILABLE') { $script:colors.cyan } else { $script:colors.green }
-  $buildValue = New-Label $buildValueText 11 $true $buildColor
-  $buildValue.Location = New-Object Drawing.Point(44,$infoValueY); $buildValue.Anchor = 'Bottom,Left'; $scene.Controls.Add($buildValue)
-  $discTitle = New-Label 'DISC' 10 $true $script:colors.muted
-  $discTitle.Location = New-Object Drawing.Point(250,$infoTitleY); $discTitle.Anchor = 'Bottom,Left'; $scene.Controls.Add($discTitle)
+  $buildValue = New-Label $buildValueText 10 $true $buildColor
+  $buildValue.Location = New-Object Drawing.Point(19,47); $statusCard.Controls.Add($buildValue)
+  $discTitle = New-Label 'GAME IMAGE' 8 $true $script:colors.muted
+  $discTitle.Location = New-Object Drawing.Point(220,18); $statusCard.Controls.Add($discTitle)
   $discValue = if (Test-FilePath ([string]$script:settings.disc)) { 'IMAGE FOUND' } else { 'NOT SELECTED' }
   $discColor = if ($discValue -eq 'IMAGE FOUND') { $script:colors.green } else { $script:colors.red }
-  $discLabel = New-Label $discValue 11 $true $discColor
-  $discLabel.Location = New-Object Drawing.Point(250,$infoValueY); $discLabel.Anchor = 'Bottom,Left'; $scene.Controls.Add($discLabel)
-  $revisionTitle = New-Label 'BUILD TARGET' 10 $true $script:colors.muted
-  $revisionTitle.Location = New-Object Drawing.Point(438,$infoTitleY); $revisionTitle.Anchor = 'Bottom,Left'; $scene.Controls.Add($revisionTitle)
-  $revisionValue = New-Label 'USA · GF7E01' 10 $true $script:colors.text
-  $revisionValue.Location = New-Object Drawing.Point(438,$infoValueY); $revisionValue.Anchor = 'Bottom,Left'; $scene.Controls.Add($revisionValue)
+  $discLabel = New-Label $discValue 10 $true $discColor
+  $discLabel.Location = New-Object Drawing.Point(220,47); $statusCard.Controls.Add($discLabel)
+  $separator=New-Object Windows.Forms.Panel; $separator.Location=New-Object Drawing.Point(200,18); $separator.Size=New-Object Drawing.Size(1,75); $separator.BackColor=$script:colors.line; $statusCard.Controls.Add($separator)
+  $targetTitle=New-Label 'TARGET' 8 $true $script:colors.muted; $targetTitle.Location=New-Object Drawing.Point(19,78); $statusCard.Controls.Add($targetTitle)
+  $targetValue=New-Label 'USA · GF7E01' 10 $true $script:colors.text; $targetValue.Location=New-Object Drawing.Point(19,98); $statusCard.Controls.Add($targetValue)
+  $statusTip=New-Label ('PLAY TIME  ·  {0}' -f (Get-PlaytimeText)) 8 $false $script:colors.muted
+  $statusTip.Location=New-Object Drawing.Point(220,82); $statusCard.Controls.Add($statusTip)
 
   $hasDisc = Test-FilePath $script:discValue
   $hasNative = Test-Path -LiteralPath $script:nativePath -PathType Leaf
-  $playText = if (-not $hasDisc) { 'IMPORT GAME IMAGE' } elseif (-not $hasNative) { 'IMPORT & BUILD' } else { 'PLAY NATIVE' }
+  $playText = if (-not $hasDisc) { 'SELECT GAME IMAGE' } elseif (-not $hasNative) { 'BUILD NATIVE' } elseif ($nativeStatus -eq 'UPDATE AVAILABLE') { 'REBUILD NATIVE' } else { 'LAUNCH GAME' }
   $play = New-Button $playText 190 $true
-  $playX = $pageWidth - 232; $playY = $pageHeight - 91
-  if ($pageWidth -lt 1250 -or $pageHeight -lt 700) { $playY = $pageHeight - 58 }
-  $play.Size = New-Object Drawing.Size(190,54); $play.Location = New-Object Drawing.Point($playX,$playY)
+  $playX = $pageWidth - 230; $playY = $cardY + 16
+  $play.Size = New-Object Drawing.Size(194,54); $play.Location = New-Object Drawing.Point($playX,$playY)
   $play.Anchor = 'Bottom,Right'; $play.Add_Click({
     if (-not (Test-FilePath $script:discValue)) { [void](Select-GameImage $true) }
-    elseif (-not (Test-Path -LiteralPath $script:nativePath -PathType Leaf)) { Start-NativeBuild }
+    elseif (-not (Test-Path -LiteralPath $script:nativePath -PathType Leaf) -or (Get-NativeStatus) -eq 'UPDATE AVAILABLE') { Start-NativeBuild }
     else { Start-NativeGame }
   }); $scene.Controls.Add($play)
-  $dolphin = New-Button 'OPEN IN DOLPHIN' 168
-  $dolphinX = $pageWidth - 420; $dolphinY = $pageHeight - 86
-  if ($pageWidth -lt 1250 -or $pageHeight -lt 700) { $dolphinY = $playY + 5 }
-  $dolphin.Size = New-Object Drawing.Size(168,44); $dolphin.Location = New-Object Drawing.Point($dolphinX,$dolphinY)
+  $dolphin = New-Button 'OPEN IN DOLPHIN' 194
+  $dolphinX = $pageWidth - 230; $dolphinY = $playY + 64
+  $dolphin.Size = New-Object Drawing.Size(194,42); $dolphin.Location = New-Object Drawing.Point($dolphinX,$dolphinY)
   $dolphin.Anchor = 'Bottom,Right'; $dolphin.Add_Click({ Start-DolphinGame }); $dolphin.Visible = (Test-FilePath $script:dolphinValue); $scene.Controls.Add($dolphin)
+  $quick = New-Label 'SPACE / A   CONTINUE' 8 $true $script:colors.cyan
+  $quick.Location=New-Object Drawing.Point($playX,($cardY-35)); $quick.Anchor='Bottom,Right'; $scene.Controls.Add($quick)
 }
 
 function Get-ContentPageWidth { [Math]::Max(880,$script:content.ClientSize.Width - 60) }
@@ -1510,7 +1546,7 @@ function Build-ModsPage {
 
 function Build-SettingsPage {
   Add-SectionHeader $script:content 'Settings' 'Choose your game, controls and native options. Changes apply on the next launch.'
-  $card=New-Card 30 112 (Get-ContentPageWidth) 660
+  $card=New-Card 30 112 (Get-ContentPageWidth) 742
   $script:discValue=$script:settings.disc; $script:dolphinValue=$script:settings.dolphin; $script:controlsValue=$script:settings.controls
   $rows=@(
     @{label='GAME IMAGE';value=$script:discValue;id='disc'},
@@ -1538,57 +1574,61 @@ function Build-SettingsPage {
     Set-Variable -Scope Script -Name ("settings_{0}" -f $row.id) -Value $t
     $y += 82
   }
-  $scaleLabel=New-Label 'INTERNAL RESOLUTION' 8 $true $script:colors.muted; $scaleLabel.Location=New-Object Drawing.Point(25,273); $card.Controls.Add($scaleLabel)
+  $columnGap=18; $columnWidth=[int][Math]::Floor(($card.Width - 50 - (2*$columnGap))/3)
+  $columnX=@(25,(25+$columnWidth+$columnGap),(25+2*($columnWidth+$columnGap)))
+  $displayHeading=New-Label 'PICTURE & DISPLAY' 11 $true $script:colors.cyan; $displayHeading.Location=New-Object Drawing.Point(25,257); $card.Controls.Add($displayHeading)
+  $scaleLabel=New-Label 'INTERNAL RESOLUTION' 8 $true $script:colors.muted; $scaleLabel.Location=New-Object Drawing.Point($columnX[0],282); $card.Controls.Add($scaleLabel)
   $script:scaleBox=New-Object Windows.Forms.ComboBox; $script:scaleBox.DropDownStyle='DropDownList'
   $script:scaleBox.Items.AddRange([object[]]@('Auto / match window','1x','1.5x','2x','3x','4x','6x'))
   $scaleValues=[double[]]@(0.0,1.0,1.5,2.0,3.0,4.0,6.0)
   $script:scaleBox.SelectedIndex=[Array]::IndexOf($scaleValues,[double]$script:scaleValue); if($script:scaleBox.SelectedIndex -lt 0){$script:scaleBox.SelectedIndex=3}
-  $script:scaleBox.Location=New-Object Drawing.Point(25,297); $script:scaleBox.Size=New-Object Drawing.Size(155,30)
+  $script:scaleBox.Location=New-Object Drawing.Point($columnX[0],306); $script:scaleBox.Size=New-Object Drawing.Size($columnWidth,30)
   Set-DarkComboBox $script:scaleBox; $card.Controls.Add($script:scaleBox)
-  $aspectLabel=New-Label 'ASPECT RATIO' 8 $true $script:colors.muted; $aspectLabel.Location=New-Object Drawing.Point(195,273); $card.Controls.Add($aspectLabel)
+  $aspectLabel=New-Label 'ASPECT RATIO' 8 $true $script:colors.muted; $aspectLabel.Location=New-Object Drawing.Point($columnX[1],282); $card.Controls.Add($aspectLabel)
   $script:aspectBox=New-Object Windows.Forms.ComboBox; $script:aspectBox.DropDownStyle='DropDownList'
   $script:aspectBox.Items.AddRange([object[]]@('Original 4:3','Widescreen 16:9 (experimental)','Fill window (stretch)'))
   $aspectValues=@('original','widescreen','stretch'); $script:aspectBox.SelectedIndex=[Array]::IndexOf($aspectValues,$script:aspectValue); if($script:aspectBox.SelectedIndex -lt 0){$script:aspectBox.SelectedIndex=0}
-  $script:aspectBox.Location=New-Object Drawing.Point(195,297); $script:aspectBox.Size=New-Object Drawing.Size(215,30)
+  $script:aspectBox.Location=New-Object Drawing.Point($columnX[1],306); $script:aspectBox.Size=New-Object Drawing.Size($columnWidth,30)
   Set-DarkComboBox $script:aspectBox; $card.Controls.Add($script:aspectBox)
-  $aaLabel=New-Label 'ANTI-ALIASING' 8 $true $script:colors.muted; $aaLabel.Location=New-Object Drawing.Point(425,273); $card.Controls.Add($aaLabel)
+  $aaLabel=New-Label 'ANTI-ALIASING' 8 $true $script:colors.muted; $aaLabel.Location=New-Object Drawing.Point($columnX[2],282); $card.Controls.Add($aaLabel)
   $script:aaBox=New-Object Windows.Forms.ComboBox; $script:aaBox.DropDownStyle='DropDownList'; $script:aaBox.Items.AddRange([object[]]@('Off','FXAA'))
   $script:aaBox.SelectedIndex=[Array]::IndexOf(@('off','fxaa'),$script:aaValue); if($script:aaBox.SelectedIndex -lt 0){$script:aaBox.SelectedIndex=0}
-  $script:aaBox.Location=New-Object Drawing.Point(425,297); $script:aaBox.Size=New-Object Drawing.Size(190,30)
+  $script:aaBox.Location=New-Object Drawing.Point($columnX[2],306); $script:aaBox.Size=New-Object Drawing.Size($columnWidth,30)
   Set-DarkComboBox $script:aaBox; $card.Controls.Add($script:aaBox)
-  $filterLabel=New-Label 'OUTPUT FILTER' 8 $true $script:colors.muted; $filterLabel.Location=New-Object Drawing.Point(650,273); $card.Controls.Add($filterLabel)
+  $filterLabel=New-Label 'OUTPUT FILTER' 8 $true $script:colors.muted; $filterLabel.Location=New-Object Drawing.Point($columnX[0],351); $card.Controls.Add($filterLabel)
   $script:filterBox=New-Object Windows.Forms.ComboBox; $script:filterBox.DropDownStyle='DropDownList'
   $script:filterBox.Items.AddRange([object[]]@('Sharp (bicubic)','Smooth (bilinear)'))
   $script:filterBox.SelectedIndex=[Array]::IndexOf(@('sharp','smooth'),$script:filterValue); if($script:filterBox.SelectedIndex -lt 0){$script:filterBox.SelectedIndex=0}
-  $script:filterBox.Location=New-Object Drawing.Point(650,297); $script:filterBox.Size=New-Object Drawing.Size(190,30)
+  $script:filterBox.Location=New-Object Drawing.Point($columnX[0],375); $script:filterBox.Size=New-Object Drawing.Size($columnWidth,30)
   Set-DarkComboBox $script:filterBox; $card.Controls.Add($script:filterBox)
-  $dzLabel=New-Label 'STICK DEADZONE' 8 $true $script:colors.muted; $dzLabel.Location=New-Object Drawing.Point(855,273); $card.Controls.Add($dzLabel)
+  $dzLabel=New-Label 'STICK DEADZONE' 8 $true $script:colors.muted; $dzLabel.Location=New-Object Drawing.Point($columnX[1],351); $card.Controls.Add($dzLabel)
   $script:deadzoneBox=New-Object Windows.Forms.ComboBox; $script:deadzoneBox.DropDownStyle='DropDownList'
   $script:deadzoneBox.Items.AddRange([object[]]@('Runtime default','Off (0%)','5%','10%','15%','20%','30%'))
   $dzValues=@('','0','5','10','15','20','30'); $script:deadzoneBox.SelectedIndex=[Array]::IndexOf($dzValues,$script:deadzoneValue); if($script:deadzoneBox.SelectedIndex -lt 0){$script:deadzoneBox.SelectedIndex=0}
-  $script:deadzoneBox.Location=New-Object Drawing.Point(855,297); $script:deadzoneBox.Size=New-Object Drawing.Size(125,30)
+  $script:deadzoneBox.Location=New-Object Drawing.Point($columnX[1],375); $script:deadzoneBox.Size=New-Object Drawing.Size($columnWidth,30)
   Set-DarkComboBox $script:deadzoneBox; $card.Controls.Add($script:deadzoneBox)
-  $dzNote=New-Label 'Pads no mapping names.' 8 $false $script:colors.muted; $dzNote.AutoSize=$true; $dzNote.Location=New-Object Drawing.Point(855,337); $card.Controls.Add($dzNote)
-  $volumeLabel=New-Label 'MASTER VOLUME (%)' 8 $true $script:colors.muted; $volumeLabel.Location=New-Object Drawing.Point(995,273); $card.Controls.Add($volumeLabel)
+  $dzNote=New-Label 'Optional steering precision.' 8 $false $script:colors.muted; $dzNote.AutoSize=$false; $dzNote.Size=New-Object Drawing.Size($columnWidth,24); $dzNote.Location=New-Object Drawing.Point($columnX[1],409); $card.Controls.Add($dzNote)
+  $volumeLabel=New-Label 'MASTER VOLUME (%)' 8 $true $script:colors.muted; $volumeLabel.Location=New-Object Drawing.Point($columnX[2],351); $card.Controls.Add($volumeLabel)
   $script:volumeBox=New-Object Windows.Forms.NumericUpDown
   $script:volumeBox.Minimum=0; $script:volumeBox.Maximum=100; $script:volumeBox.Increment=5
-  $script:volumeBox.Value=$script:volumeValue; $script:volumeBox.Location=New-Object Drawing.Point(995,297); $script:volumeBox.Size=New-Object Drawing.Size(120,30)
+  $script:volumeBox.Value=$script:volumeValue; $script:volumeBox.Location=New-Object Drawing.Point($columnX[2],375); $script:volumeBox.Size=New-Object Drawing.Size([Math]::Min(160,$columnWidth),30)
   $script:volumeBox.BackColor=$script:colors.panel2; $script:volumeBox.ForeColor=$script:colors.text; $card.Controls.Add($script:volumeBox)
-  $aspectBadge=New-Object Windows.Forms.Label; $aspectBadge.Text='F8   TOGGLE ASPECT'; $aspectBadge.Location=New-Object Drawing.Point(195,337); $aspectBadge.Size=New-Object Drawing.Size(190,26)
+  $aspectBadge=New-Object Windows.Forms.Label; $aspectBadge.Text='F8   TOGGLE ASPECT'; $aspectBadge.Location=New-Object Drawing.Point($columnX[0],409); $aspectBadge.Size=New-Object Drawing.Size($columnWidth,24)
   $aspectBadge.TextAlign='MiddleCenter'; $aspectBadge.BackColor=$script:colors.selection; $aspectBadge.ForeColor=$script:colors.cyan
   $aspectBadge.BorderStyle='FixedSingle'; $aspectBadge.Font=New-Object Drawing.Font('Bahnschrift SemiBold',9); $card.Controls.Add($aspectBadge)
-  $filterNote=New-Label 'FXAA softens edges; Sharp + AA Off keeps text crisp.' 8 $false $script:colors.muted; $filterNote.Location=New-Object Drawing.Point(425,337); $card.Controls.Add($filterNote)
-  $rendererRule=New-Object Windows.Forms.Panel; $rendererRule.Location=New-Object Drawing.Point(25,362); $rendererRule.Size=New-Object Drawing.Size(980,1); $rendererRule.BackColor=$script:colors.line; $card.Controls.Add($rendererRule)
-  $rendererLabel=New-Label 'RENDERER · OPENGL (NATIVE BACKEND)' 12 $true $script:colors.cyan; $rendererLabel.Location=New-Object Drawing.Point(25,371); $card.Controls.Add($rendererLabel)
+  $filterNote=New-Label 'FXAA softens; Sharp + AA Off keeps text crisp.' 8 $false $script:colors.muted; $filterNote.AutoSize=$false; $filterNote.Size=New-Object Drawing.Size($columnWidth,30); $filterNote.Location=New-Object Drawing.Point($columnX[2],409); $card.Controls.Add($filterNote)
+  $rendererRule=New-Object Windows.Forms.Panel; $rendererRule.Location=New-Object Drawing.Point(25,441); $rendererRule.Size=New-Object Drawing.Size($card.Width-50,1); $rendererRule.BackColor=$script:colors.line; $card.Controls.Add($rendererRule)
+  $rendererLabel=New-Label 'RENDERER & PRESENTATION' 11 $true $script:colors.cyan; $rendererLabel.Location=New-Object Drawing.Point(25,454); $card.Controls.Add($rendererLabel)
   $script:fullscreenBox=New-Object Windows.Forms.CheckBox; $script:fullscreenBox.Text='Start fullscreen (Alt+Enter to toggle)'
-  $script:fullscreenBox.Checked=$script:fullscreenValue; $script:fullscreenBox.Location=New-Object Drawing.Point(25,399); $script:fullscreenBox.AutoSize=$true; $script:fullscreenBox.ForeColor=$script:colors.text; $card.Controls.Add($script:fullscreenBox)
+  $script:fullscreenBox.Checked=$script:fullscreenValue; $script:fullscreenBox.Location=New-Object Drawing.Point(25,481); $script:fullscreenBox.AutoSize=$true; $script:fullscreenBox.ForeColor=$script:colors.text; $card.Controls.Add($script:fullscreenBox)
   $script:vsyncBox=New-Object Windows.Forms.CheckBox; $script:vsyncBox.Text='Prevent screen tearing (VSync)'
-  $script:vsyncBox.Checked=$script:vsyncValue; $script:vsyncBox.Location=New-Object Drawing.Point(355,399); $script:vsyncBox.AutoSize=$true; $script:vsyncBox.ForeColor=$script:colors.text; $card.Controls.Add($script:vsyncBox)
+  $script:vsyncBox.Checked=$script:vsyncValue; $script:vsyncBox.Location=New-Object Drawing.Point(355,481); $script:vsyncBox.AutoSize=$true; $script:vsyncBox.ForeColor=$script:colors.text; $card.Controls.Add($script:vsyncBox)
+  $audioTitle=New-Label 'AUDIO & INPUT' 11 $true $script:colors.cyan; $audioTitle.Location=New-Object Drawing.Point(25,518); $card.Controls.Add($audioTitle)
   $script:muteBox=New-Object Windows.Forms.CheckBox; $script:muteBox.Text='Mute game music'; $script:muteBox.Checked=[bool]$script:settings.muteMusic
-  $script:muteBox.Location=New-Object Drawing.Point(25,438); $script:muteBox.AutoSize=$true; $script:muteBox.ForeColor=$script:colors.text; $card.Controls.Add($script:muteBox)
+  $script:muteBox.Location=New-Object Drawing.Point(25,546); $script:muteBox.AutoSize=$true; $script:muteBox.ForeColor=$script:colors.text; $card.Controls.Add($script:muteBox)
   $script:logBox=New-Object Windows.Forms.CheckBox; $script:logBox.Text='Record controller input for diagnostics'; $script:logBox.Checked=[bool]$script:settings.inputLog
-  $script:logBox.Location=New-Object Drawing.Point(215,438); $script:logBox.AutoSize=$true; $script:logBox.ForeColor=$script:colors.text; $card.Controls.Add($script:logBox)
-  $save=New-Button 'SAVE SETTINGS' 155 $true; $save.Location=New-Object Drawing.Point(25,476)
+  $script:logBox.Location=New-Object Drawing.Point(215,546); $script:logBox.AutoSize=$true; $script:logBox.ForeColor=$script:colors.text; $card.Controls.Add($script:logBox)
+  $save=New-Button 'SAVE SETTINGS' 155 $true; $save.Location=New-Object Drawing.Point(25,582)
   $save.Add_Click({
     $script:discValue=$script:settings_disc.Text; $script:dolphinValue=$script:settings_dolphin.Text; $script:controlsValue=$script:settings_controls.Text
     $scaleOptions=[double[]]@(0.0,1.0,1.5,2.0,3.0,4.0,6.0); $script:scaleValue=$scaleOptions[$script:scaleBox.SelectedIndex]
@@ -1600,16 +1640,16 @@ function Build-SettingsPage {
     $dzOptions=@('','0','5','10','15','20','30'); $script:deadzoneValue=$dzOptions[$script:deadzoneBox.SelectedIndex]
     Save-Settings; Set-Status 'Settings saved.' $true
   }); $card.Controls.Add($save)
-  $controllerRule=New-Object Windows.Forms.Panel; $controllerRule.Location=New-Object Drawing.Point(25,527); $controllerRule.Size=New-Object Drawing.Size(620,1); $controllerRule.BackColor=$script:colors.line; $card.Controls.Add($controllerRule)
+  $controllerRule=New-Object Windows.Forms.Panel; $controllerRule.Location=New-Object Drawing.Point(25,634); $controllerRule.Size=New-Object Drawing.Size($card.Width-50,1); $controllerRule.BackColor=$script:colors.line; $card.Controls.Add($controllerRule)
   $controllerTitle=New-Label 'CONTROLLER DETECTOR' 12 $true $script:colors.cyan
-  $controllerTitle.Location=New-Object Drawing.Point(25,538); $card.Controls.Add($controllerTitle)
+  $controllerTitle.Location=New-Object Drawing.Point(25,646); $card.Controls.Add($controllerTitle)
   $controllerText=New-Label 'Press a pad button or move an axis; detected SDL names can be used in your optional controls mapping.' 9 $false $script:colors.muted
-  $controllerText.Location=New-Object Drawing.Point(25,563); $card.Controls.Add($controllerText)
-  $detect=New-Button 'DETECT CONTROLLER' 190 $true; $detect.Location=New-Object Drawing.Point(25,593)
+  $controllerText.Location=New-Object Drawing.Point(25,673); $card.Controls.Add($controllerText)
+  $detect=New-Button 'DETECT CONTROLLER' 190 $true; $detect.Location=New-Object Drawing.Point(25,700)
   $detect.Add_Click({ Start-ControllerDetector }); $card.Controls.Add($detect)
-  $viewLog=New-Button 'VIEW LAST RESULTS' 168; $viewLog.Location=New-Object Drawing.Point(231,593)
+  $viewLog=New-Button 'VIEW LAST RESULTS' 168; $viewLog.Location=New-Object Drawing.Point(231,700)
   $viewLog.Add_Click({ Open-ControllerLog }); $card.Controls.Add($viewLog)
-  $editControls=New-Button 'CREATE / EDIT MAPPING' 190; $editControls.Location=New-Object Drawing.Point(414,593)
+  $editControls=New-Button 'CREATE / EDIT MAPPING' 190; $editControls.Location=New-Object Drawing.Point(414,700)
   $editControls.Add_Click({ Open-ControlsFile }); $card.Controls.Add($editControls)
   $script:content.Controls.Add($card)
 }
