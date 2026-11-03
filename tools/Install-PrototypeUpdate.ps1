@@ -183,9 +183,9 @@ try {
     $destination = Get-UpdateFullPath $payloadRoot $relative
     Assert-NoReparseParents $payloadRoot $destination $false
     [IO.Directory]::CreateDirectory((Split-Path -Parent $destination)) | Out-Null
-    $input = $entry.Open()
+    $entryStream = $entry.Open()
     $output = [IO.File]::Open($destination,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
-    try { $input.CopyTo($output) } finally { $output.Dispose(); $input.Dispose() }
+    try { $entryStream.CopyTo($output) } finally { $output.Dispose(); $entryStream.Dispose() }
     if ($name -cne $manifestName -and (Get-FileSha256 $destination) -cne $manifestTable[$name]) { throw "Staged package verification failed: $name" }
   }
   $archive.Dispose(); $archive = $null

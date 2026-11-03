@@ -45,7 +45,8 @@ bounded hidden boot on the tested machine; see VALIDATION.md for the scope of
 that evidence. First-mission flight and profile persistence have been tested.
 The first-boss visibility report, an invalid-current-thread-pointer crash, later
 missions, mission completion, full audio fidelity and all physical controllers
-remain unverified. Widescreen is experimental.
+remain unverified. Widescreen is experimental. See RELEASE-NOTES.md and
+VALIDATION.md for the release scope and known limits.
 
 The included LICENSE covers original project software source; CREDITS.md,
 THIRD_PARTY_NOTICES.md and the font license file list attributions and licenses.

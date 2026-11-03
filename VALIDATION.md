@@ -61,6 +61,31 @@ provides their own supported game image and builds locally.
 
 ## Validation log
 
+### 2026-11-03 — host-script and runtime source checks
+
+The host scripts and runtime sources were also checked outside Windows for defects
+the packaged build steps would not surface. This is not a Windows build or a gameplay
+run: the launcher GUI was not exercised, no game image was imported and the shipped
+bootstrap executable was not rebuilt.
+
+- All 16 PowerShell host scripts (`Launch-StarFoxAssault.ps1` plus `tools/*.ps1`) parse
+  without syntax errors under the PowerShell 7.6.9 parser. `tools/Verify-Project.ps1`
+  performs the same parse check during a Windows verification run.
+- PSScriptAnalyzer 1.25.0 reported no error-severity findings. Two automatic-variable
+  collisions were fixed: the launcher assembled the native game's argument list by
+  assigning to `$args`, and the update installer reused `$input` for a ZIP entry
+  stream. The remaining warnings are convention-only (console output through
+  `Write-Host`, `ShouldProcess` on internal helpers, plural helper nouns) and are
+  documented in `tools/PSScriptAnalyzerSettings.psd1`.
+- The eight runtime tests that build without a game image or SDL passed on the
+  checked-out sources: display options, render math, audio gain, texcoord, disc mods,
+  REL rebinding, disc image and thread-watch filter. `utf8_path_test` is Windows-only
+  and was not run.
+- `runtime/tools/check_generic.py`, the shared-layer guard against game-specific code,
+  passed.
+
+The open gameplay defects are unaffected by these checks; see the entries above.
+
 ### 2026-11-03 — replay save isolation and stability investigation
 
 The native executable rebuilt successfully from the existing local tool cache after a

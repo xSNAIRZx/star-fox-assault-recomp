@@ -42,7 +42,7 @@ foreach ($path in @($stage,$verify,$zipPath,$archiveHashPath)) {
   if (Test-Path -LiteralPath $full) { throw "Refusing to overwrite an existing package path: $full" }
 }
 
-$allowedExtensions = @('.c','.cc','.cpp','.cs','.h','.hh','.hpp','.inl','.cmake','.txt','.md','.py','.ps1','.cmd','.bat','.sh','.yml','.yaml','.json','.xml','.mm','.swift','.entitlements','.frag','.vert','.geom','.comp','.glsl','.glslinc','.inc','.rc','.def','.properties','.java','.kt','.gradle','.kts','.mk','.in','.manifest','.bin','.png','.ico','.sha1')
+$allowedExtensions = @('.c','.cc','.cpp','.cs','.h','.hh','.hpp','.inl','.cmake','.txt','.md','.py','.ps1','.cmd','.bat','.sh','.yml','.yaml','.json','.xml','.mm','.swift','.entitlements','.frag','.vert','.geom','.comp','.glsl','.glslinc','.inc','.rc','.def','.properties','.java','.kt','.gradle','.kts','.mk','.in','.manifest','.bin','.png','.ico','.sha1','.psd1')
 $excludedSegments = @('.git','.claude','.githooks','analysis','orig','build','build-native','build-desktop','userdata','user-data','saves','reference-metadata')
 $packageFiles = New-Object 'System.Collections.Generic.List[object]'
 $manifestPath = 'SHA256SUMS.txt'
@@ -155,112 +155,13 @@ try {
     if ($nativeHashBefore -ne $nativeHashAfter) { throw 'The validated native candidate changed while packaging; output was not created.' }
   }
 
-  $readme = @'
-STAR FOX ASSAULT RECOMP 0.2.0-RC.2 - WINDOWS X64 SOURCE PACKAGE
-
-This package contains the launcher, recompiler source, build tools, and a standalone
-game-image inspector. It does not contain a game image or a prebuilt game executable.
-You must provide your own USA Star Fox: Assault ISO or CISO (disc ID GF7E01).
-
-GETTING STARTED
-
-1. Extract this folder somewhere you can write files.
-2. Start "Star Fox Assault Recomp.exe" (or "Start-StarFoxAssault.cmd").
-3. Choose Import Game Image and select your own supported USA ISO/CISO.
-4. Choose Import & Build. The launcher checks the image, downloads the pinned
-   portable build tools and required SDL source, then builds a local game executable.
-5. When the build finishes, choose Play Native.
-
-The first build needs internet access and downloads about 280 MB of pinned build tools,
-plus SDL source. Allow several GB of free disk space for downloads, build files, and
-caches. It requires 64-bit Windows 10 version 1903 or newer and a graphics adapter
-with desktop OpenGL 3.3 support. It does not require administrator installation,
-Dolphin, or a separately installed compiler. Later builds reuse the local tool cache.
-If Windows blocks a download, read the launcher message and retry after restoring
-internet access.
-
-PORTABLE FILES AND UPDATES
-
-This folder includes portable.txt. Settings, downloaded tools, build output, saves,
-and logs are kept under user-data. Package updates preserve those local files and
-your locally built game executable. Keep the whole folder together when moving the
-installation to another location.
-
-The launcher provides graphics options, controller mapping, save backups, local mod
-pack management, package updates, and optional Dolphin launch support. Native asset
-replacement currently accepts same-size files at matching disc paths. It does not
-replace DOL/REL game code. Online update and mod services are not included.
-
-PROJECT STATUS
-
-This is an experimental source-build release candidate, not a complete or stable
-game release. The rc.2 package completed an empty-cache online build and bounded
-hidden boot on the tested machine; see VALIDATION.md for scope. First-mission flight
-and profile persistence have been tested. The
-first-boss visibility report, an invalid-current-thread-pointer crash, later missions,
-mission completion, full audio fidelity, and all physical controllers remain
-unverified. Widescreen is experimental. See RELEASE-NOTES.md and VALIDATION.md.
-
-The included LICENSE covers original project software source; CREDITS.md,
-THIRD_PARTY_NOTICES.md, and the font license file list
-attributions and licenses. The original game image and extracted or generated game
-code are not included. The adjacent SHA256SUMS.txt covers package files, and the
-adjacent .zip.sha256 file fingerprints the complete ZIP archive.
-'@
-  Set-Content -LiteralPath (Join-Path $stage 'README-PROTOTYPE.txt') -Value $readme -Encoding utf8
-  $packageValidation = @'
-# Validation summary
-
-Validation date: 2026-11-01. This report summarizes the completed rc.2 empty-cache
-package build and bounded boot. It contains no local image paths, image hashes, or
-user data.
-
-## Checks passed
-
-- The rc.2 source package was extracted into a Unicode-named folder with no existing
-  tool, SDL or game build cache. Its actual **Import & Build** action downloaded all
-  four pinned tool archives, verified their SHA-256 values, fetched and built SDL, and
-  compiled 101 fresh Ninja units. A plain ISO path with spaces and an apostrophe was
-  accepted. The 42,158,080-byte native executable was produced in about 150 seconds.
-  This is an end-to-end empty-cache online first-use run.
-- The launcher build used only the Windows system path plus portable tools from
-  `user-data`; it did not use a preinstalled compiler, CMake, Ninja, Python, or Dolphin.
-- Existing `%LOCALAPPDATA%` launcher settings remained unchanged during the portable
-  build.
-- A hidden normal-speed boot ran for its full 10-second bound after that build. The
-  health-and-safety screen rendered readable text. Both Japanese and Western
-  replacement fonts loaded from the Unicode-named asset path. The test used an
-  isolated synthetic save and ended at the planned time limit.
-- Portable Windows x64 build-tool manifest verification and an incremental native
-  build completed successfully.
-- The runtime regression suite passed 9 of 9 checks.
-- The rc.2 launcher build UI passed six cases covering Unicode paths, successful
-  build, cancellation, worker failure, exit-code mismatch, missing status, and retry.
-  Build-cache signature regressions passed two cases. Worker invalid-image and
-  cancellation runs returned the expected failure/cancel states and retained the
-  prior executable.
-- Portable tool setup rejected empty offline caches, quarantined a corrupt archive,
-  and rejected a traversal archive without leaving staging files.
-- An unchanged offline rebuild completed in 2.86 seconds with the same native
-  executable hash.
-- The standalone image inspector validates supported USA GF7E01 images read-only.
-- Package integrity, excluded-file checks, and update rollback/preservation checks
-  passed for the source-and-host-tools package.
-
-## Not yet established
-
-- Full-game compatibility, later missions, mission completion, complete audio
-  fidelity, and all physical controllers remain unverified.
-- The reported first-boss visibility issue and invalid-current-thread-pointer crash
-  remain unresolved. Widescreen remains experimental.
-
-The package excludes game images, extracted DOL/REL files, generated game code,
-prebuilt game executables, local settings, saves, and build caches. Each recipient
-provides their own supported game image and builds locally.
-'@
-  $validationPath = Join-Path $stage 'VALIDATION.md'
-  Set-Content -LiteralPath $validationPath -Value $packageValidation -Encoding utf8
-  $packageFiles.Add([pscustomobject]@{ Source=$validationPath; Relative='VALIDATION.md' })
+    # Ship the repository's own documents. Earlier revisions embedded copies here, which
+  # drifted from the maintained files whenever the notes changed.
+  foreach ($document in @('README-PROTOTYPE.txt','VALIDATION.md')) {
+    $documentSource = Join-Path $projectDir $document
+    if (-not (Test-Path -LiteralPath $documentSource -PathType Leaf)) { throw "Required repository document is missing: $document" }
+    Add-PackageFile $documentSource $document
+  }
 
   $manifest = New-Object 'System.Collections.Generic.List[string]'
   foreach ($relative in (Get-PackageRelativeFiles $stage)) {

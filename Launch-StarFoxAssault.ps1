@@ -270,14 +270,14 @@ function Start-NativeGame {
     $info = Test-GameImage $script:discValue
     Save-Settings
     [IO.Directory]::CreateDirectory($script:nativeRunDir) | Out-Null
-    $args = Get-NativeGraphicsArguments
-    $args += "--vsync=$([int]$script:vsyncValue)"
-    $args += "--volume=$([int]$script:volumeValue)"
-    if($script:fullscreenValue){$args += '--fullscreen'}
-    if (-not $script:logValue) { $args += '--no-input-log' }
-    if ($script:muteValue) { $args += '--no-music' }
-    if ($script:controlsValue) { $args += ('--controls="{0}"' -f $script:controlsValue) }
-    $args += ('"{0}"' -f $script:discValue)
+    $nativeArgs = Get-NativeGraphicsArguments
+    $nativeArgs += "--vsync=$([int]$script:vsyncValue)"
+    $nativeArgs += "--volume=$([int]$script:volumeValue)"
+    if($script:fullscreenValue){$nativeArgs += '--fullscreen'}
+    if (-not $script:logValue) { $nativeArgs += '--no-input-log' }
+    if ($script:muteValue) { $nativeArgs += '--no-music' }
+    if ($script:controlsValue) { $nativeArgs += ('--controls="{0}"' -f $script:controlsValue) }
+    $nativeArgs += ('"{0}"' -f $script:discValue)
     $logsDir = Join-Path $script:nativeRunDir 'logs'
     [IO.Directory]::CreateDirectory($logsDir) | Out-Null
     $sessionName = 'native-{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff'),([Guid]::NewGuid().ToString('N').Substring(0,6))
@@ -300,7 +300,7 @@ function Start-NativeGame {
         if(-not(Test-Path -LiteralPath $script:nativeModsDir -PathType Container)){throw 'Install a native asset pack before enabling native mods.'}
         [Environment]::SetEnvironmentVariable('GCN_MODS_DIR',$script:nativeModsDir,'Process')
       } else { [Environment]::SetEnvironmentVariable('GCN_MODS_DIR',$null,'Process') }
-      $gameProcess = Start-Process -FilePath $script:nativePath -ArgumentList $args -WorkingDirectory $script:nativeRunDir -RedirectStandardError $stderr -RedirectStandardOutput $stdout -PassThru
+      $gameProcess = Start-Process -FilePath $script:nativePath -ArgumentList $nativeArgs -WorkingDirectory $script:nativeRunDir -RedirectStandardError $stderr -RedirectStandardOutput $stdout -PassThru
     } finally {
       [Environment]::SetEnvironmentVariable('GCN_MODS_DIR',$previousModsDir,'Process')
       [Environment]::SetEnvironmentVariable('GCN_FONT_DIR',$previousFontDir,'Process')
