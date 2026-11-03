@@ -78,7 +78,10 @@ $script:logValue = [bool]$script:settings.inputLog
 $script:nativeModsValue = [bool]$script:settings.nativeMods
 $script:fullscreenValue = [bool]$script:settings.fullscreen
 $script:vsyncValue = [bool]$script:settings.vsync
-$script:volumeValue = [Math]::Max(0,[Math]::Min(100,[int]$script:settings.volume))
+# A hand-edited or half-written profile must not stop the launcher from opening, so a
+# volume that is not a number falls back to the default like the other values above.
+$script:volumeValue = 100
+try { $script:volumeValue = [Math]::Max(0,[Math]::Min(100,[int]$script:settings.volume)) } catch { $script:volumeValue = 100 }
 
 $script:colors = @{
   base = [Drawing.Color]::FromArgb(4,11,15)
@@ -111,12 +114,28 @@ function Save-Settings {
   $script:settings.fullscreen = [bool]$script:fullscreenValue
   $script:settings.vsync = [bool]$script:vsyncValue
   $script:settings.volume = [int]$script:volumeValue
-  $script:settings | ConvertTo-Json | Set-Content -LiteralPath $script:settingsPath -Encoding utf8
+  # Write beside the profile and swap it in, so an interrupted save leaves the previous
+  # settings readable instead of truncating them mid-document.
+  $tempPath = $script:settingsPath + '.tmp'
+  try {
+    [IO.File]::WriteAllText($tempPath,($script:settings | ConvertTo-Json),(New-Object System.Text.UTF8Encoding($false)))
+    if (Test-Path -LiteralPath $script:settingsPath -PathType Leaf) {
+      try { [IO.File]::Replace($tempPath,$script:settingsPath,[NullString]::Value) }
+      catch {
+        # File.Replace needs a volume that supports it; removable FAT/exFAT folders do not.
+        [IO.File]::Copy($tempPath,$script:settingsPath,$true)
+        [IO.File]::Delete($tempPath)
+      }
+    } else { [IO.File]::Move($tempPath,$script:settingsPath) }
+  } finally {
+    if (Test-Path -LiteralPath $tempPath) { Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue }
+  }
 }
 function Set-Status([string]$text, [bool]$good = $false) {
   if ($script:statusLabel) {
     $script:statusLabel.Text = $text
     $script:statusLabel.ForeColor = if ($good) { $script:colors.green } else { $script:colors.muted }
+    if ($script:statusTip) { $script:statusTip.SetToolTip($script:statusLabel,[string]$text) }
   }
 }
 function Test-FilePath([string]$path) {
@@ -752,7 +771,7 @@ $script:form.Add_Resize({
     $script:sidebar.Width = $script:form.ClientSize.Width
     $script:content.Location = New-Object Drawing.Point(0,$script:sidebar.Height)
     $script:content.Size = New-Object Drawing.Size($script:form.ClientSize.Width,[Math]::Max(100,$script:form.ClientSize.Height - $script:sidebar.Height))
-    if ($script:statusLabel) { $script:statusLabel.Location = New-Object Drawing.Point([Math]::Max(920,$script:sidebar.Width - 280),18) }
+    Update-StatusLabelBounds
     if ($script:backgroundResizeTimer) { $script:backgroundResizeTimer.Stop(); $script:backgroundResizeTimer.Start() }
   }
 })
@@ -763,7 +782,7 @@ $script:form.Add_Shown({
   $script:content.Location = New-Object Drawing.Point(0,$script:sidebar.Height)
   $script:content.Size = New-Object Drawing.Size($script:form.ClientSize.Width,[Math]::Max(100,$script:form.ClientSize.Height - $script:sidebar.Height))
   Update-LauncherBackground
-  $script:statusLabel.Location = New-Object Drawing.Point([Math]::Max(920,$script:sidebar.Width - 280),18)
+  Update-StatusLabelBounds
   $script:sidebar.BringToFront()
   Show-Page 'Home'
   if (-not (Test-FilePath $script:discValue)) {
@@ -785,13 +804,24 @@ $script:form.Add_FormClosed({
   foreach ($resource in @($script:brandFont,$script:brandBrush,$script:brandAccent)) { if ($resource) { $resource.Dispose() } }
   $script:brandFont = $null; $script:brandBrush = $null; $script:brandAccent = $null
 })
-$header = New-Object Windows.Forms.Panel
-$header.Dock = 'None'; $header.Height = 0
-$script:pageTitle = New-Label 'PLAY' 9 $true $script:colors.muted
-$script:pageTitle.Location = New-Object Drawing.Point(0,0)
-  $script:statusLabel = New-Label '' 10 $true $script:colors.muted
- $script:statusLabel.AutoSize = $false; $script:statusLabel.TextAlign = 'MiddleRight'; $script:statusLabel.Size = New-Object Drawing.Size(240,35)
-$script:statusLabel.Location = New-Object Drawing.Point(1200,18); $sidebar.Controls.Add($script:statusLabel)
+$script:navRowEnd = 232
+$script:statusLabel = New-Label '' 10 $true $script:colors.muted
+$script:statusLabel.AutoSize = $false; $script:statusLabel.TextAlign = 'MiddleRight'
+$script:statusLabel.AutoEllipsis = $true; $script:statusLabel.Size = New-Object Drawing.Size(240,35)
+$sidebar.Controls.Add($script:statusLabel)
+$script:statusTip = New-Object Windows.Forms.ToolTip
+$script:statusTip.AutoPopDelay = 20000; $script:statusTip.InitialDelay = 400; $script:statusTip.ReshowDelay = 100
+# Status messages carry error details, so they start after the nav row instead of at a fixed
+# x, and the tooltip keeps the whole message reachable when the sidebar is narrow.
+function Update-StatusLabelBounds {
+  if (-not $script:statusLabel) { return }
+  $left = [Math]::Max(24,$script:navRowEnd + 20)
+  $available = $script:sidebar.Width - $left - 16
+  if ($available -lt 140) { $script:statusLabel.Visible = $false; return }
+  $script:statusLabel.Visible = $true
+  $script:statusLabel.Location = New-Object Drawing.Point($left,18)
+  $script:statusLabel.Size = New-Object Drawing.Size($available,35)
+}
 
 $navItems = @(
   @{key='Home';label='PLAY';width=82},
@@ -818,10 +848,12 @@ $aboutNav.FlatStyle='Flat'; $aboutNav.FlatAppearance.BorderSize=0; $aboutNav.Tex
 $aboutNav.BackColor=[Drawing.Color]::Transparent; $aboutNav.ForeColor=$script:colors.muted
 $aboutNav.Font=New-Object Drawing.Font('Bahnschrift SemiBold',10); $aboutNav.Cursor=[Windows.Forms.Cursors]::Hand
 $aboutNav.Add_Click({Show-Page 'About'}); $sidebar.Controls.Add($aboutNav); $script:navButtons['About']=$aboutNav
+$script:navRowEnd = $navX + $aboutNav.Width
+Update-StatusLabelBounds
 
 function Show-Page([string]$page) {
   $script:content.SuspendLayout()
-  foreach ($c in @($script:content.Controls)) { if ($c -ne $header) { $script:content.Controls.Remove($c); $c.Dispose() } }
+  foreach ($c in @($script:content.Controls)) { $script:content.Controls.Remove($c); $c.Dispose() }
   foreach ($key in $script:navButtons.Keys) {
     $selected = ($key -eq $page)
     $script:navButtons[$key].BackColor = if ($selected) { $script:colors.selection } else { [Drawing.Color]::Transparent }
@@ -832,8 +864,6 @@ function Show-Page([string]$page) {
   if ($script:brandLabel) { $script:brandLabel.Visible = $true }
   if ($script:brandSubLabel) { $script:brandSubLabel.Visible = $true }
   if ($script:brandMark) { $script:brandMark.Visible = $true }
-  $titles = @{Home='PLAY';Library='LIBRARY';Saves='MEMORY CARDS';Mods='MODS';Crashes='CRASHES';Settings='SETTINGS';About='ABOUT'}
-  $script:pageTitle.Text = $titles[$page]
   switch ($page) {
     'Home' { Build-HomePage }
     'Library' { Build-LibraryPage }
@@ -885,7 +915,8 @@ function Build-HomePage {
   $buildTitle.Location = New-Object Drawing.Point(44,$infoTitleY); $buildTitle.Anchor = 'Bottom,Left'; $scene.Controls.Add($buildTitle)
   $nativeStatus = Get-NativeStatus
   $buildValueText = if ($nativeStatus -eq 'UPDATE AVAILABLE') { 'UPDATE AVAILABLE' } elseif ($nativeStatus -eq 'NOT BUILT') { 'NOT BUILT' } else { 'CURRENT' }
-  $buildValue = New-Label $buildValueText 11 $true $script:colors.green
+  $buildColor = if ($nativeStatus -eq 'NOT BUILT') { $script:colors.red } elseif ($nativeStatus -eq 'UPDATE AVAILABLE') { $script:colors.cyan } else { $script:colors.green }
+  $buildValue = New-Label $buildValueText 11 $true $buildColor
   $buildValue.Location = New-Object Drawing.Point(44,$infoValueY); $buildValue.Anchor = 'Bottom,Left'; $scene.Controls.Add($buildValue)
   $discTitle = New-Label 'DISC' 10 $true $script:colors.muted
   $discTitle.Location = New-Object Drawing.Point(250,$infoTitleY); $discTitle.Anchor = 'Bottom,Left'; $scene.Controls.Add($discTitle)

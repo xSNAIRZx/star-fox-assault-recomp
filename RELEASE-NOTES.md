@@ -33,6 +33,24 @@ updater required-file lists now name every launcher script and recompiler module
 `tools/Test-LauncherTools.ps1` fails when a referenced tool is missing or no packaging rule
 ships it.
 
+## Source changes after the rc.3 package
+
+These launcher changes are in the repository but not in the rc.3 archive; they need a Windows
+repackaging run before they reach a download.
+
+- The status line now starts after the navigation row and is sized to the space actually free,
+  so it no longer sits on top of the About button at the minimum window size. Long messages are
+  ellipsized with the complete text available as a tooltip, so build and game-image errors can
+  be read instead of being cut off at a fixed width.
+- The Play page reports BUILD honestly: red for NOT BUILT, cyan for UPDATE AVAILABLE and green
+  only for CURRENT, instead of green in every case.
+- Settings are written to a temporary file beside the profile and swapped in, with a plain copy
+  kept as a fallback for folders whose volume does not support `File.Replace`. An interrupted
+  save therefore leaves the previous settings readable instead of truncating them, and a profile
+  whose volume value is not a number opens with the default volume rather than stopping the
+  launcher before its window appears.
+- Two widgets that were created but never placed on any page were removed.
+
 ## rc.2 diagnostics and validation baseline
 
 The launcher branding and code-source changes are described above. The analysis below is retained

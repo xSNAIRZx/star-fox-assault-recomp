@@ -222,3 +222,31 @@ unresolved. The retained boss evidence has no matching gameplay recording, and t
 crash log shows the pointer was already invalid before the SDK dereference. Capture an
 isolated, normal-speed controller/input recording and frames at the failure to
 continue diagnosis. This focused rebuild does not validate either gameplay fix.
+
+### 2026-11-03 — launcher polish source checks
+
+`Launch-StarFoxAssault.ps1` was polished in source: the status line now starts after the
+navigation row and is sized to the free sidebar width, with an ellipsis and a tooltip carrying
+the full message; the Play page's BUILD value is coloured per state; settings are written
+through a temporary file and swapped in; and a profile whose volume is not a number no longer
+stops the launcher before its window appears.
+
+Checked here, without Windows, a game image or a GUI:
+
+- All 17 host PowerShell scripts (the launcher plus `tools/*.ps1`) parse without errors under
+  the PowerShell 7.4.6 parser, and PSScriptAnalyzer 1.25.0 reports no error-severity findings.
+  The remaining warnings are the convention-only ones already documented.
+- `tools/Test-LauncherTools.ps1` passes: 100 paths checked, 0 problems.
+- The launcher's own `Save-Settings` text was executed against a temporary profile: disc,
+  volume, deadzone and vsync round-trip, a deliberately truncated profile is replaced, no
+  `.tmp` file is left behind and no UTF-8 BOM is written. The first run of this check failed
+  on `[IO.File]::Replace($temp,$settings,$null)`, where PowerShell binds `$null` as an empty
+  path; the save now passes a real null and falls back to a copy where `File.Replace` is
+  unsupported.
+- The volume-parsing statement was executed with `'loud'`, `$null`, `999`, `-5`, `42` and
+  `'35'`, producing 100, 0, 100, 0, 42 and 35.
+
+Not verified: the WinForms window was never shown, so the navigation and status geometry at
+the 1180 px minimum width, the tooltip and the new colours are reasoned from the layout code
+rather than observed. Capture the default and minimum window sizes before describing the
+launcher as visually verified, and repackage before this reaches a download.
