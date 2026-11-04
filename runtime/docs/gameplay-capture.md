@@ -32,7 +32,10 @@ elsewhere must be placed in the capture's run directory for subsequent manual us
 Baseline: 1x, 4:3, AA off, sharp filtering, VSync on, normal speed, no mods. Inherited
 `GCN_*` variables are removed from the child environment; the parent is unchanged.
 To compare widescreen, repeat with `-Aspect widescreen` and the same replay.
-Focus the game window; Space/A continues past safety, Enter sends Start, Escape exits.
+Focus the game window; Space continues past safety, Enter sends Start, Escape exits.
+WASD moves; F9 captures/releases the mouse, F10 selects C-stick Aim or main-stick
+Flight. Use the game's Dual-Stick setting for on-foot aiming; captured Aim-mode
+left-click sends R, while Flight-mode or released-mouse left-click sends A.
 Record the route, boss phase, camera position, and last visible/first missing moment.
 
 `-Mode Thread` enables guard/store watch; `-Mode Boss` enables vertex diagnostics;
@@ -72,6 +75,17 @@ guaranteed if the runtime never reaches/presents that frame.
 creating files, or starting a process. `-StopAfterSeconds 15` bounds a startup check;
 it forcibly stops only the child process at the limit, may leave input logs incomplete,
 and must not be interpreted as a successful playthrough. Normal captures have no limit.
+
+`-InputScript '120:A:20,400:START:20'` explicitly supplies scripted pad presses for
+navigation. It cannot be combined with replay. Omit it for a person-controlled run:
+scripted buttons are merged with live input, so a long held A prevents a player from
+releasing A to fire a charged shot. `-LogHostKeys` logs SDL key-down events for input
+diagnosis. Both options are recorded in `capture.json`; inherited scripts still do
+not leak into the child. Logs can be read during capture while concurrent writers
+remain blocked. Normal interruption/error cleanup stops only the child it started.
+`-Hidden` adds hidden/script-only presentation and a dummy audio device for an
+isolated unattended replay; the recorded input still drives the guest. Use a visible
+capture for a person playing. Hidden replay is silent and cannot validate audio feel.
 
 ## Read the evidence
 

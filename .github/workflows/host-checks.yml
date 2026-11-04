@@ -22,5 +22,7 @@ jobs:
       - run: cmake -S runtime/tests -B build-tests -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build-tests --parallel 4
       - run: ctest --test-dir build-tests --output-on-failure --no-tests=error
+      - run: python3 runtime/tests/ppc_integer_test.py --cc cc --work build-ppc-integer
+      - run: python3 runtime/tests/ppc_fp_compare_test.py --cc cc --work build-ppc-fp-compare
       - run: cmake -S runtime/tools/native -B build-host -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build-host --parallel 4

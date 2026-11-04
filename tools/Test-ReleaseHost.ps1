@@ -9,7 +9,7 @@ function Invoke-Checked([string]$program,[string[]]$arguments) {
 # Run each script in its own process: some scripts use exit, and native failure
 # must never be masked by a later successful command or an empty CTest run.
 $shell=Join-Path $env:WINDIR 'System32/WindowsPowerShell/v1.0/powershell.exe'
-$scripts=@('Test-LauncherTools.ps1','Test-BuildCacheSignature.ps1','Test-GameplayCapture.ps1')
+$scripts=@('Test-LauncherTools.ps1','Test-BuildCacheSignature.ps1','Test-GameplayCapture.ps1','Test-NativeCheck.ps1')
 foreach($file in @((Join-Path $project 'Launch-StarFoxAssault.ps1'))+@(Get-ChildItem $PSScriptRoot -Filter '*.ps1' -File | ForEach-Object FullName)){
   $tokens=$null; $errors=$null
   [void][Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errors)
@@ -28,6 +28,8 @@ foreach($tool in $manifest.tools){
   $paths[$tool.id]=(Join-Path $folder $tool.executable).Replace('\','/')
 }
 $bin=(Split-Path -Parent $paths['llvm-mingw']).Replace('\','/')
+Invoke-Checked $paths.python @("$project/runtime/tests/ppc_integer_test.py",'--cc',"$bin/x86_64-w64-mingw32-clang.exe",'--work',"$project/user-data/verification/ppc-integer")
+Invoke-Checked $paths.python @("$project/runtime/tests/ppc_fp_compare_test.py",'--cc',"$bin/x86_64-w64-mingw32-clang.exe",'--work',"$project/user-data/verification/ppc-fp-compare")
 $build=(Join-Path $project 'user-data/verification/release-host-tests').Replace('\','/')
 Invoke-Checked $paths.cmake @('--fresh','-S',"$project/runtime/tests",'-B',$build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',"-DCMAKE_MAKE_PROGRAM=$($paths.ninja)","-DCMAKE_C_COMPILER=$bin/x86_64-w64-mingw32-clang.exe", "-DCMAKE_CXX_COMPILER=$bin/x86_64-w64-mingw32-clang++.exe", "-DCMAKE_RC_COMPILER=$bin/llvm-windres.exe")
 Invoke-Checked $paths.cmake @('--build',$build,'--parallel','4')

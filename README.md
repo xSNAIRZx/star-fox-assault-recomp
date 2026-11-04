@@ -48,7 +48,9 @@ The launcher also provides controller mapping, volume controls, session logs, sa
 
 Choose the internal resolution, 4:3 or experimental 16:9 aspect ratio, anti-aliasing, output filtering, volume, fullscreen, VSync and controller deadzone from Settings. Original 4:3 preserves the intended game composition; Sharp with AA Off keeps text crisp.
 
-At the game's health-and-safety screen, focus the game window and press **Space** or **A** (or left-click) to continue. **Enter** sends Start; **B** or **Z** sends Back; **Escape** exits the game. Arrow keys steer, **I/J/K/L** navigate the D-pad, and **X/C/S/D/Q/W** provide the legacy action, face, Z and shoulder inputs. Mouse left/right/middle clicks send A/B/X. Press **F9** to capture the mouse and steer with relative movement; press F9 again or switch away from the game to release it. A connected controller works as well.
+At the health-and-safety screen, focus the game window and press **Space** (or left-click with the mouse released). **Enter** sends Start; **B/Z** sends Back; **Escape** exits. **WASD** and arrow keys move the main stick; **I/J/K/L** send the D-pad. **Space/X**, **C**, **Q**, **E**, **Left Shift**, and **Left Ctrl** send GameCube A, X, Y, Z, L, and R respectively. WASD no longer fires actions.
+
+Press **F9** to capture/release the mouse. The default **Mouse Aim** mode sends relative movement to the C-stick, independently of WASD; choose the game's **Dual-Stick** control setup for on-foot movement and aiming. In captured Aim mode, **left-click fires R**, as that setup requires. With the mouse released, left-click confirms A in menus. **F10** switches to **Mouse Flight**, where mouse motion and WASD share the main stick and left-click fires A. The original Arwing links steering and aiming, so those cannot be separated by a controller mapping. Right/middle click send B/X. Focus loss releases capture; the window title shows the mode. Existing `controls.txt` mappings and connected gamepads remain available and can override sticks.
 
 ## Audio
 

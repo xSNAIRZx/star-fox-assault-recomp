@@ -10,7 +10,16 @@ namespace gx {
 inline bool zfreeze_plane_from_vertices(const float* p, const float* vp, const float* positions,
                                         int xoff, int yoff, int width, int height,
                                         float internal_scale, float aspect_x, float out[4]) {
-    const bool perspective = (int)p[6] == 0;
+    // A non-finite triangle cannot define a depth plane. Keep the caller's last
+    // valid plane intact, just as for a degenerate triangle, instead of poisoning
+    // every later z-freeze draw. In particular, do not cast an unchecked NaN
+    // projection tag to int (undefined behavior in C++).
+    if (width <= 0 || height <= 0 || !std::isfinite(internal_scale) || internal_scale <= 0.0f ||
+        !std::isfinite(aspect_x)) return false;
+    for (int i = 0; i < 7; i++) if (!std::isfinite(p[i])) return false;
+    for (int i = 0; i < 6; i++) if (!std::isfinite(vp[i])) return false;
+    for (int i = 0; i < 9; i++) if (!std::isfinite(positions[i])) return false;
+    const bool perspective = p[6] == 0.0f;
     const float vpa[4] = {2.0f * (vp[3] - xoff) / width - 1.0f, 2.0f * vp[0] / width,
                           2.0f * (vp[4] - yoff) / height - 1.0f, 2.0f * vp[1] / height};
     const float far = std::min(vp[5], 16777215.0f);
@@ -30,16 +39,16 @@ inline bool zfreeze_plane_from_vertices(const float* p, const float* vp, const f
         X[i] = (px / cw + 1.0) * 0.5 * width * internal_scale;
         Y[i] = (-py / cw + 1.0) * 0.5 * height * internal_scale;
         Z[i] = (pz / cw + 1.0) * 0.5;
+        if (!std::isfinite(X[i]) || !std::isfinite(Y[i]) || !std::isfinite(Z[i])) return false;
     }
     const double ux = X[1] - X[0], uy = Y[1] - Y[0], uz = Z[1] - Z[0];
     const double wx = X[2] - X[0], wy = Y[2] - Y[0], wz = Z[2] - Z[0];
     const double det = ux * wy - uy * wx;
     if (std::fabs(det) < 1e-9) return false;
     const double a = (uz * wy - uy * wz) / det, b = (ux * wz - uz * wx) / det;
-    out[0] = (float)a;
-    out[1] = (float)b;
-    out[2] = (float)(Z[0] - a * X[0] - b * Y[0]);
-    out[3] = 1.0f;
+    const float plane[4] = {(float)a, (float)b, (float)(Z[0] - a * X[0] - b * Y[0]), 1.0f};
+    for (int i = 0; i < 3; i++) if (!std::isfinite(plane[i])) return false;
+    std::copy(plane, plane + 4, out);
     return true;
 }
 

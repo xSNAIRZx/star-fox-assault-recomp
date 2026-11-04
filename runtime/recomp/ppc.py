@@ -167,7 +167,9 @@ def translate(pc, i):
     if op == 8:  # subfic
         return f'{{ uint64_t t = (uint64_t)(uint32_t)~c->r[{a}] + (uint32_t){simm} + 1; c->r[{d}] = (uint32_t)t; c->xer_ca = (uint8_t)(t >> 32); }}'
     if op == 7:  # mulli
-        return f'c->r[{d}] = (uint32_t)((int32_t)c->r[{a}] * {simm});'
+        # The guest retains the low word even when the signed product overflows.
+        # Unsigned multiplication gives those same bits without host C signed UB.
+        return f'c->r[{d}] = c->r[{a}] * (uint32_t){simm};'
     if op == 11:  # cmpi
         crf = d >> 2
         return f'c->cr[{crf}] = CMPS((int32_t)c->r[{a}], {simm});'
@@ -533,6 +535,14 @@ def cr1(rc):
     return ' c->cr[1] = (uint8_t)(c->fpscr >> 28);' if rc else ''
 
 
+def float_compare(field, left, right):
+    # Floating comparisons update both the selected CR field and FPSCR[FPCC].
+    # Materialize a preceding arithmetic result before replacing only FPCC, so
+    # its separate FPRF C bit survives and a deferred result cannot overwrite us.
+    return (f'{{ uint8_t result = FCMP({left}, {right}); c->cr[{field}] = result; '
+            f'c->fpscr = (FPSCR_READ(c) & ~0xF000u) | ((uint32_t)result << 12); }}')
+
+
 # An arithmetic result sets FPSCR[FPRF]; it is recorded here and classified only when the
 # FPSCR is read (FPSCR_READ in runtime/recomp.h).
 FPRF_S = ' c->fprf_v = v; c->fprf_pending = 2;'
@@ -578,7 +588,7 @@ def translate63(pc, i, d, a, b, cc, rc):
     if xo5 == 22:  # fsqrt (not on gekko, but harmless)
         return f'{{ double v = sqrt({F(b)}); {F(d)} = v;{FPRF_D} }}' + cr1(rc)
     if xo in (0, 32):  # fcmpu, fcmpo
-        return f'c->cr[{d >> 2}] = FCMP({F(a)}, {F(b)});'
+        return float_compare(d >> 2, F(a), F(b))
     if xo == 12:  # frsp
         return f'{{ double v = (double)(float){F(b)}; {F(d)} = v; {P1(d)} = v;{FPRF_S} }}' + cr1(rc)
     if xo == 14:  # fctiw
@@ -676,13 +686,13 @@ def translate4(pc, i, d, a, b, cc, rc):
         return pair(f'fma({A0}, {C1}, {B0})', f'fma({A1}, {C1}, {B1})')
 
     if xo == 0:  # ps_cmpu0
-        return f'c->cr[{d >> 2}] = FCMP({A0}, {B0});'
+        return float_compare(d >> 2, A0, B0)
     if xo == 32:
-        return f'c->cr[{d >> 2}] = FCMP({A0}, {B0});'
+        return float_compare(d >> 2, A0, B0)
     if xo == 64:
-        return f'c->cr[{d >> 2}] = FCMP({A1}, {B1});'
+        return float_compare(d >> 2, A1, B1)
     if xo == 96:
-        return f'c->cr[{d >> 2}] = FCMP({A1}, {B1});'
+        return float_compare(d >> 2, A1, B1)
     if xo == 40:
         return pair(f'-{B0}', f'-{B1}', rnd=False)
     if xo == 72:

@@ -1045,7 +1045,7 @@ function Build-HomePage {
   $dolphinX = $pageWidth - 230; $dolphinY = $playY + 64
   $dolphin.Size = New-Object Drawing.Size(194,42); $dolphin.Location = New-Object Drawing.Point($dolphinX,$dolphinY)
   $dolphin.Anchor = 'Bottom,Right'; $dolphin.Add_Click({ Start-DolphinGame }); $dolphin.Visible = (Test-FilePath $script:dolphinValue); $scene.Controls.Add($dolphin)
-  $quick = New-Label 'SPACE / A   CONTINUE' 8 $true $script:colors.cyan
+  $quick = New-Label 'SPACE CONTINUE  /  F9 MOUSE' 8 $true $script:colors.cyan
   $quick.Location=New-Object Drawing.Point($playX,($cardY-35)); $quick.Anchor='Bottom,Right'; $scene.Controls.Add($quick)
 }
 

@@ -1,5 +1,12 @@
 # Release decision: blocked
 
+Continuation on 2026-11-04 added WASD/mouse controls, tested CPU FPCC and integer
+translation corrections, invalid depth-plane rejection, and process-test fixes.
+See the dated entry in `VALIDATION.md` and `RELEASE-NOTES.md`. These are source
+improvements; neither original gameplay blocker is claimed fixed. Earlier package
+digests and smoke results below belong to the earlier candidate, not this changed
+runtime. Build and test the changed candidate separately before distribution.
+
 Assessed 2026-11-03 against source baseline
 `d46e231a2494d201923b08898f52cf9753abb030` plus the host CI changes accompanying
 this document. This is an experimental source-and-host-tools candidate, not a

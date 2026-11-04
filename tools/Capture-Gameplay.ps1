@@ -9,6 +9,9 @@ param(
   [Nullable[uint32]]$DrawFrame=$null,
   [uint32[]]$RamFrames=@(),
   [ValidateRange(0,86400)][int]$StopAfterSeconds=0,
+  [string]$InputScript='',
+  [switch]$LogHostKeys,
+  [switch]$Hidden,
   [switch]$PlanOnly
 )
 $ErrorActionPreference='Stop'
@@ -26,6 +29,15 @@ $run=Join-Path $session 'run'
 $argsList=@('--scale=1',"--aspect=$Aspect",'--aa=off','--filter=sharp','--vsync=1',('--input-log='+ (Join-Path $session 'inputs')))
 if($ReplayDirectory){$argsList+=('--replay='+ (Join-Path $session 'replay'))}
 $captureEnv=[ordered]@{GCN_TIMESCALE='1';GCN_CLOCKLOG='1';GCN_FONT_DIR=(Join-Path $project 'assets\fonts');GCN_RAM_DUMP=(Join-Path $session 'crash.ram.bin')}
+if($InputScript){
+  if($ReplayDirectory){throw 'Use InputScript or ReplayDirectory, not both.'}
+  $captureEnv.GCN_INPUT=$InputScript
+}
+if($LogHostKeys){$captureEnv.GCN_LOG_HOST_KEYS='1'}
+if($Hidden){
+  $argsList+=@('--hidden','--script-only')
+  $captureEnv.SDL_AUDIODRIVER='dummy'
+}
 if($Mode -in @('Thread','Both')){$captureEnv.GCN_GUARD='800000E4';$captureEnv.GCN_WATCH_ADDR='800000E4'}
 if($Mode -in @('Boss','Both')){$captureEnv.GCN_VERTCHECK='1'}
 if($null -ne $DrawFrame){
@@ -82,20 +94,28 @@ $psi.RedirectStandardOutput=$true;$psi.RedirectStandardError=$true
 foreach($key in @($psi.EnvironmentVariables.Keys)){if($key -like 'GCN_*'){$psi.EnvironmentVariables.Remove($key)}}
 foreach($key in $captureEnv.Keys){$psi.EnvironmentVariables[$key]=[string]$captureEnv[$key]}
 $process=New-Object Diagnostics.Process;$process.StartInfo=$psi
-$stdout=$null;$stderr=$null;$forced=$false
+$stdout=$null;$stderr=$null;$forced=$false;$started=$false
 Write-Host "Capture folder: $session"
 try {
-  $stdout=[IO.File]::Create((Join-Path $session 'stdout.log'))
-  $stderr=[IO.File]::Create((Join-Path $session 'stderr.log'))
+  # Permit live readers, but prevent another writer or deletion during capture.
+  $stdout=[IO.File]::Open((Join-Path $session 'stdout.log'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+  $stderr=[IO.File]::Open((Join-Path $session 'stderr.log'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
   if(-not $process.Start()){throw 'Could not start native executable.'}
+  $started=$true
   $outTask=$process.StandardOutput.BaseStream.CopyToAsync($stdout)
   $errTask=$process.StandardError.BaseStream.CopyToAsync($stderr)
-  if($StopAfterSeconds -gt 0 -and -not $process.WaitForExit($StopAfterSeconds*1000)){
-    $forced=$true;$process.Kill()
+  $watch=[Diagnostics.Stopwatch]::StartNew()
+  while(-not $process.WaitForExit(200)){
+    if($StopAfterSeconds -gt 0 -and $watch.Elapsed.TotalSeconds -ge $StopAfterSeconds){
+      $forced=$true;$process.Kill();break
+    }
   }
   $process.WaitForExit();$null=$outTask.GetAwaiter().GetResult();$null=$errTask.GetAwaiter().GetResult()
   [ordered]@{exit_code=$process.ExitCode;forced_stop=$forced;finished_utc=[DateTime]::UtcNow.ToString('o');note='A forced stop may leave input logs incomplete and does not establish gameplay success.'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $session 'result.json') -Encoding UTF8
   Write-Host "Capture finished: exit $($process.ExitCode), forced stop: $forced"
 } finally {
+  # Disposing Process only releases its handle. Do not leave this capture's
+  # child running if collection fails or the PowerShell invocation is cancelled.
+  if($started -and -not $process.HasExited){$process.Kill();$process.WaitForExit()}
   if($stdout){$stdout.Dispose()};if($stderr){$stderr.Dispose()};$process.Dispose()
 }

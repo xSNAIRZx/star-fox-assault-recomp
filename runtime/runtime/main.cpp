@@ -29,6 +29,7 @@
 #include <thread>
 #include <vector>
 #include "pad_curve.h"
+#include "desktop_input.h"
 
 uint32_t boot_load(const char* iso_path);
 void debug_dump_threads();
@@ -151,7 +152,7 @@ void audio_set_master_volume(unsigned percent);
 // ---------------------------------------------------------------------------
 static SDL_GameController* g_ctrl;
 static bool g_script_only;
-static bool g_mouse_flight;
+static desktop_input::MouseState g_mouse;
 // --deadzone=<percent>, -1 until given. Only the built-in controller path uses it: a pad a
 // controls.txt binding names keeps that binding's own deadzone (input_map.h).
 static int g_deadzone_percent = -1;
@@ -169,42 +170,33 @@ static uint8_t axis_to_u8(int v, bool invert) {
 static void merge_desktop_pad(PadState& p) {
     const uint8_t* k = SDL_GetKeyboardState(nullptr);
     if (k[SDL_SCANCODE_RETURN] && !k[SDL_SCANCODE_LALT] && !k[SDL_SCANCODE_RALT]) p.buttons |= PAD_START;
-    // Keep the legacy X/Z defaults, while adding familiar A/B and Space
-    // aliases so a keyboard can advance the safety screen and navigate menus without
-    // requiring a separately configured gamepad mapping.
-    if (k[SDL_SCANCODE_X] || k[SDL_SCANCODE_A] || k[SDL_SCANCODE_SPACE]) p.buttons |= PAD_A;
+    // Reserve WASD for movement. Mouse Aim uses the C-stick independently; F10
+    // selects main-stick mouse steering for flight without changing capture (F9).
+    if (k[SDL_SCANCODE_X] || k[SDL_SCANCODE_SPACE]) p.buttons |= PAD_A;
     if (k[SDL_SCANCODE_Z] || k[SDL_SCANCODE_B]) p.buttons |= PAD_B;
     if (k[SDL_SCANCODE_C]) p.buttons |= PAD_X;
-    if (k[SDL_SCANCODE_S]) p.buttons |= PAD_Y;
-    if (k[SDL_SCANCODE_D]) p.buttons |= PAD_Z;
-    if (k[SDL_SCANCODE_Q]) { p.buttons |= PAD_L; p.trig_l = 255; }
-    if (k[SDL_SCANCODE_W]) { p.buttons |= PAD_R; p.trig_r = 255; }
+    if (k[SDL_SCANCODE_Q]) p.buttons |= PAD_Y;
+    if (k[SDL_SCANCODE_E]) p.buttons |= PAD_Z;
+    if (k[SDL_SCANCODE_LSHIFT]) { p.buttons |= PAD_L; p.trig_l = 255; }
+    if (k[SDL_SCANCODE_LCTRL]) { p.buttons |= PAD_R; p.trig_r = 255; }
     if (k[SDL_SCANCODE_I]) p.buttons |= PAD_UP;
     if (k[SDL_SCANCODE_K]) p.buttons |= PAD_DOWN;
     if (k[SDL_SCANCODE_J]) p.buttons |= PAD_LEFT;
     if (k[SDL_SCANCODE_L]) p.buttons |= PAD_RIGHT;
-    int sx = 0, sy = 0;
-    if (k[SDL_SCANCODE_LEFT]) sx -= 100;
-    if (k[SDL_SCANCODE_RIGHT]) sx += 100;
-    if (k[SDL_SCANCODE_UP]) sy += 100;
-    if (k[SDL_SCANCODE_DOWN]) sy -= 100;
+    desktop_input::Keyboard keyboard;
+    keyboard.left = k[SDL_SCANCODE_A] || k[SDL_SCANCODE_LEFT];
+    keyboard.right = k[SDL_SCANCODE_D] || k[SDL_SCANCODE_RIGHT];
+    keyboard.up = k[SDL_SCANCODE_W] || k[SDL_SCANCODE_UP];
+    keyboard.down = k[SDL_SCANCODE_S] || k[SDL_SCANCODE_DOWN];
     const Uint32 mouse = SDL_GetMouseState(nullptr, nullptr);
-    if (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)) p.buttons |= PAD_A;
-    if (mouse & SDL_BUTTON(SDL_BUTTON_RIGHT)) p.buttons |= PAD_B;
-    if (mouse & SDL_BUTTON(SDL_BUTTON_MIDDLE)) p.buttons |= PAD_X;
-    if (g_mouse_flight) {
-        int dx = 0, dy = 0;
-        SDL_GetRelativeMouseState(&dx, &dy);
-        sx = std::clamp(sx + dx * 3, -100, 100);
-        sy = std::clamp(sy - dy * 3, -100, 100);
-    } else {
-        // Drain motion accumulated before capture so enabling it cannot jump the stick.
-        SDL_GetRelativeMouseState(nullptr, nullptr);
-    }
-    if (sx || sy) {
-        p.stick_x = (uint8_t)(128 + sx);
-        p.stick_y = (uint8_t)(128 + sy);
-    }
+    desktop_input::apply_mouse_buttons(p,
+        (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0,
+        (mouse & SDL_BUTTON(SDL_BUTTON_RIGHT)) != 0,
+        (mouse & SDL_BUTTON(SDL_BUTTON_MIDDLE)) != 0, g_mouse);
+    int dx = 0, dy = 0;
+    // Always drain motion so re-capture cannot replay a stale delta.
+    SDL_GetRelativeMouseState(&dx, &dy);
+    desktop_input::apply(p, keyboard, g_mouse, dx, dy);
     if (g_ctrl) {
         auto b = [&](SDL_GameControllerButton btn) { return SDL_GameControllerGetButton(g_ctrl, btn); };
         if (b(SDL_CONTROLLER_BUTTON_A)) p.buttons |= PAD_A;
@@ -270,15 +262,22 @@ static bool pump_events() {
                  (e.key.keysym.sym == SDLK_F8 || e.key.keysym.scancode == SDL_SCANCODE_F8) && !e.key.repeat)
             g_toggle_display_aspect = true;
         else if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_F9 && !e.key.repeat) {
-            const bool enable = !g_mouse_flight;
+            const bool enable = !g_mouse.captured;
             if (SDL_SetRelativeMouseMode(enable ? SDL_TRUE : SDL_FALSE) == 0) {
-                g_mouse_flight = enable;
+                g_mouse.captured = enable;
                 SDL_ShowCursor(enable ? SDL_DISABLE : SDL_ENABLE);
                 SDL_GetRelativeMouseState(nullptr, nullptr);
-                fprintf(stderr, "[input] mouse flight %s (F9 toggles)\n", enable ? "captured" : "released");
+                fprintf(stderr, "[input] mouse %s; mode=%s (F9 capture, F10 aim/flight)\n", enable ? "captured" : "released",
+                        g_mouse.mode == desktop_input::MouseMode::Aim ? "aim/C-stick" : "flight/main-stick");
             } else {
                 fprintf(stderr, "[input] could not change mouse capture: %s\n", SDL_GetError());
             }
+        }
+        else if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_F10 && !e.key.repeat) {
+            g_mouse.toggle_mode();
+            SDL_GetRelativeMouseState(nullptr, nullptr);
+            fprintf(stderr, "[input] mouse mode=%s; WASD moves, F9 captures/releases\n",
+                    g_mouse.mode == desktop_input::MouseMode::Aim ? "aim/C-stick" : "flight/main-stick");
         }
         else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_RETURN &&
                  (e.key.keysym.mod & KMOD_ALT) && !e.key.repeat) {
@@ -292,10 +291,10 @@ static bool pump_events() {
         // A device controls.txt binds is the file's alone.
         else if (e.type == SDL_CONTROLLERDEVICEADDED && !g_ctrl && !input_map_binds_index(e.cdevice.which))
             g_ctrl = SDL_GameControllerOpen(e.cdevice.which);
-        else if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_FOCUS_LOST && g_mouse_flight) {
+        else if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_FOCUS_LOST && g_mouse.captured) {
             SDL_SetRelativeMouseMode(SDL_FALSE);
             SDL_ShowCursor(SDL_ENABLE);
-            g_mouse_flight = false;
+            g_mouse.focus_lost();
         }
         else if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) running = false;
     }
@@ -320,6 +319,12 @@ static void apply_display_toggle(gx::DisplayAspect& aspect, bool fxaa, bool shar
 }
 
 int main(int argc, char** argv) {
+    fprintf(stdout, "Desktop controls: WASD/arrows move; Space/X confirms (A); right mouse/B/Z back (B); Enter Start.\n"
+                    "F9 captures/releases mouse; F10 switches Aim/Flight. Captured Aim: mouse=C-stick, left click=R fire; select Dual-Stick in game.\n"
+                    "Free mouse: left click=A for menus.\n"
+                    "Flight: mouse=main-stick steering, left click=A fire (Arwing).\n"
+                    "C/middle mouse=X, Q=Y, E=Z, left Shift=L, left Ctrl=R, IJKL=D-pad.\n");
+    fflush(stdout);
     // The game resetting the console starts it again in a fresh process, as a power cycle
     // would -- except in a replay, which would only replay itself from the start again.
     static char** s_argv = argv;
@@ -664,7 +669,9 @@ int main(int argc, char** argv) {
             double secs = std::chrono::duration<double>(now - t0).count();
             if (secs >= 2.0) {
                 char title[128];
-                snprintf(title, sizeof(title), GCN_APP_LABEL " - %.1f fps", frames / secs);
+                snprintf(title, sizeof(title), GCN_APP_LABEL " - %.1f fps - Mouse %s%s", frames / secs,
+                         g_mouse.mode == desktop_input::MouseMode::Aim ? "Aim" : "Flight",
+                         g_mouse.captured ? " [captured]" : " [free: F9]");
                 SDL_SetWindowTitle(win, title);
                 frames = 0;
                 t0 = now;
@@ -672,7 +679,7 @@ int main(int argc, char** argv) {
         }
     }
     record::finish();
-    if (g_mouse_flight) { SDL_SetRelativeMouseMode(SDL_FALSE); SDL_ShowCursor(SDL_ENABLE); }
+    if (g_mouse.captured) { SDL_SetRelativeMouseMode(SDL_FALSE); SDL_ShowCursor(SDL_ENABLE); }
     input_log_end();
     input_map_shutdown();
     threads_request_quit();

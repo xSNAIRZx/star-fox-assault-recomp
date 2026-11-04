@@ -12,6 +12,15 @@ public class CaptureStub {
   public static int Main(string[] args) {
     Console.WriteLine("SYNTHETIC TEST PROCESS");
     Console.WriteLine("cwd=" + Directory.GetCurrentDirectory());
+    string parent = Directory.GetParent(Directory.GetCurrentDirectory()).FullName;
+    foreach (string name in new [] {"stdout.log", "stderr.log"}) {
+      using (var live = new FileStream(Path.Combine(parent, name), FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        Console.WriteLine("live-read=" + name);
+      bool blocked = false;
+      try { using (var writer = new FileStream(Path.Combine(parent, name), FileMode.Open, FileAccess.Write, FileShare.ReadWrite)) {} }
+      catch (IOException) { blocked = true; }
+      if (!blocked) return 99;
+    }
     foreach (string arg in args) Console.WriteLine("arg=" + Convert.ToBase64String(Encoding.UTF8.GetBytes(arg)));
     foreach (System.Collections.DictionaryEntry item in Environment.GetEnvironmentVariables())
       if (((string)item.Key).StartsWith("GCN_")) Console.Error.WriteLine(item.Key + "=" + item.Value);
@@ -40,6 +49,7 @@ try {
   $result=Get-Content -LiteralPath (Join-Path $session 'result.json') -Raw | ConvertFrom-Json
   Assert ($result.exit_code -eq 7 -and -not $result.forced_stop) 'Child exit code was lost.'
   $lines=Get-Content -LiteralPath (Join-Path $session 'stdout.log')
+  Assert (($lines -contains 'live-read=stdout.log') -and ($lines -contains 'live-read=stderr.log')) 'Capture logs could not be read while the child was running.'
   $decoded=@($lines | Where-Object {$_ -like 'arg=*'} | ForEach-Object {[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($_.Substring(4)))})
   Assert ($decoded[-1] -ceq $image) 'Image path quoting changed the argument.'
   Assert ($decoded -contains ('--replay='+ (Join-Path $session 'replay'))) 'Replay argument was split.'
@@ -52,16 +62,20 @@ try {
   Assert ((Get-Content -LiteralPath (Join-Path $replay 'memcard_a.raw') -Raw) -eq 'original card') 'Original card changed.'
   Assert (Test-Path -LiteralPath (Join-Path $session 'replay\memcard_replay.raw')) 'Scratch replay was not isolated.'
   $out=Join-Path $root 'thread'
-  & $capture -GameImage $image -Executable $stub -OutputRoot $out -Mode Thread -MemoryCard (Join-Path $replay 'memcard_a.raw')
+  & $capture -GameImage $image -Executable $stub -OutputRoot $out -Mode Thread -MemoryCard (Join-Path $replay 'memcard_a.raw') -InputScript '100:START:10,200:A:10' -LogHostKeys
   $session=(Get-ChildItem -LiteralPath $out -Directory).FullName
   Assert ((Get-Content -LiteralPath (Join-Path $session 'run\saves\memcard_a.raw') -Raw) -eq 'original card') 'Starting card was not copied.'
   Assert ((Get-Content -LiteralPath (Join-Path $session 'stderr.log') -Raw) -notmatch 'GCN_VERTCHECK=') 'Boss environment leaked into thread capture.'
+  $explicit=Get-Content -LiteralPath (Join-Path $session 'stderr.log') -Raw
+  Assert ($explicit -match 'GCN_INPUT=100:START:10,200:A:10' -and $explicit -match 'GCN_LOG_HOST_KEYS=1') 'Explicit input diagnostics were not applied.'
   $planOnly=Join-Path $root 'must not exist'
   $json=& $capture -GameImage (Join-Path $root 'missing.iso') -Executable (Join-Path $root 'missing.exe') -OutputRoot $planOnly -Mode Boss -PlanOnly
   Assert (-not(Test-Path -LiteralPath $planOnly)) 'PlanOnly wrote files.'
   $p=$json | ConvertFrom-Json
   Assert ($p.environment.GCN_VERTCHECK -eq '1' -and -not $p.environment.GCN_GUARD) 'Boss plan had wrong environment.'
-  foreach($bad in @(@{DrawFrame=0},@{Mode='Thread';DrawFrame=2},@{ReplayDirectory=$replay;MemoryCard=$image})){
+  $hiddenPlan=(& $capture -GameImage $image -Mode Boss -Hidden -PlanOnly) | ConvertFrom-Json
+  Assert ($hiddenPlan.arguments -contains '--hidden' -and $hiddenPlan.arguments -contains '--script-only' -and $hiddenPlan.environment.SDL_AUDIODRIVER -eq 'dummy') 'Hidden replay does not isolate live input and audio.'
+  foreach($bad in @(@{DrawFrame=0},@{Mode='Thread';DrawFrame=2},@{ReplayDirectory=$replay;MemoryCard=$image},@{ReplayDirectory=$replay;InputScript='100:A:10'})){
     $rejected=$false;try {& $capture -GameImage $image -PlanOnly @bad | Out-Null}catch{$rejected=$true}
     Assert $rejected 'Invalid option combination was accepted.'
   }

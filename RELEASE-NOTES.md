@@ -1,3 +1,18 @@
+# Unreleased — 2026-11-04 controls and correctness checks
+
+- WASD movement with independent mouse Aim (C-stick), F9 capture/release and F10
+  Flight steering. Captured Aim-mode left-click sends R for the game's Dual-Stick
+  on-foot controls; released-mouse/Flight left-click sends A. Mode/capture status
+  appears in the window title. WASD no longer triggers unrelated action buttons.
+- Floating compares now update FPSCR FPCC as well as CR; `mulli` uses defined
+  modulo arithmetic rather than relying on the host compiler's overflow behavior.
+- Invalid/overflowing z-freeze depth planes leave the previous valid plane intact.
+- Smoke checks retain numeric exit codes, isolate diagnostics and reject premature
+  exits even when the child exits 0. Capture logs permit live reading and explicit
+  scripted navigation/host-key logging; scripts remain absent unless requested.
+- These source fixes have synthetic regression coverage. They do not establish
+  that the disappearing boss or current-thread-pointer failure is repaired.
+
 # Source-only Windows capture tooling
 
 - Added `tools/Capture-Gameplay.ps1` and `runtime/docs/gameplay-capture.md` for isolated

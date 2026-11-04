@@ -1,5 +1,55 @@
 # Validation summary
 
+## Continued correctness and controls work — 2026-11-04
+
+**Gameplay reproduction obtained:** the updated diagnostic executable
+`374c659ae2e99d83f9c42f87b0322e74c098051132aa51fd63b99ad98aa875bc`
+reached the Winged Aparoid with a person playing. The boss was visibly present,
+then absent during the first meteor attack while its health bar and encounter
+continued. A silent game-window video, input recording, starting-card snapshot,
+build identity and diagnostic logs were retained privately. The game closed
+normally with exit 0. No vertex non-finite report, invalid-pointer guard report
+or fatal MMU message was found around this reproduction. This rules out none of
+game-side visibility, finite off-frustum geometry or render-state failures; the
+vertex check only inspects submitted positions. The boss defect is confirmed
+on this changed build, not fixed. Before/after replay captures are the next check.
+
+The changed native build succeeded, 14/14 CTest targets passed, and the complete
+host runner (including the process, generated-instruction and package/update
+checks below) passed on Windows PowerShell 5.1. These local results do not certify
+hosted CI or full-game playability.
+
+Three focused agents reviewed PPC translation, renderer math and process tooling.
+The original `mulli` emission traps under signed-overflow checking; its modulo
+replacement passes 12,600 generated-C cases. The existing LLVM target already
+uses `-fwrapv`, so this is portability hardening, not a demonstrated gameplay repair.
+Floating comparisons previously left FPSCR FPCC stale; generated compare/mffs/mcrfs
+sequences fail on the baseline and pass 288 cases after preserving the pending
+arithmetic classification and updating FPCC. NaN exception flags remain incomplete.
+
+Renderer math now rejects non-finite/overflowing z-freeze inputs without replacing
+the valid plane; the new cases produce 146 failures on the original helper and none
+after correction. A pure desktop input helper passes 23 checks for WASD/mouse channel
+independence, fire mappings, mode/focus changes and extreme mouse deltas. Its live
+feel and all game control configurations still need validation.
+
+The diagnostic baseline build reached mission-one flight and its ground/canyon
+section with a copied card and input recording, then closed cleanly with exit 0.
+No invalid-pointer transition or vertex diagnostic was observed in that capture.
+The scripted route held A continuously, preventing the user from releasing it to
+fire; it was stopped, and a subsequent human-controlled run must omit held fire.
+This session did not establish a boss reproduction or mission completion.
+
+Process regressions cover early exits 0/7, nonzero shutdown-grace exit, numeric
+forced-stop codes, large stdout/stderr, Unicode paths and environment/save isolation.
+Capture tests verify live log readers, rejection of second writers, explicit input
+options and replay exclusion. Hosted CI for these new changes is a separate gate.
+
+Historical primary research located Dolphin's 2011 fadds workaround and 2013
+FPRF correction for Assault's invisible boss. This project already records arithmetic
+FPRF, so those fixes cannot simply be assumed to explain its current failure:
+<https://github.com/dolphin-emu/dolphin/commit/5a212a8fe0cc05b375a0d26aa62e9cd4d3f0977c>.
+
 ## Final-readiness audit — 2026-11-03
 
 See [RELEASE-READINESS.md](RELEASE-READINESS.md) for the latest fresh Windows build,

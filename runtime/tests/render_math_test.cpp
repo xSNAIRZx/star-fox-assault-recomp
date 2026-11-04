@@ -1,6 +1,7 @@
 #include "../runtime/gx/render_math.h"
 #include <cmath>
 #include <cstdio>
+#include <limits>
 
 int main() {
     int failures = 0;
@@ -64,6 +65,41 @@ int main() {
                                   1.0f, -1.0f, -4.0f,
                                   1.0f, -1.0f, -4.0f};
     check(!gx::zfreeze_plane_from_vertices(proj, viewport, degenerate, 0, 0, 640, 528, 2.5f, 0.75f, ortho_plane));
+    // Invalid input or overflowing projection arithmetic must not replace the
+    // previous frame's valid plane with NaNs/Infinities. Exercise every input
+    // component, including the projection tag which used to be cast to int.
+    auto rejected_unchanged = [&](const float* p, const float* vp, const float* pos,
+                                  int width = 640, int height = 528, float scale = 1.0f,
+                                  float aspect = 1.0f) {
+        float plane[4] = {1.0f, 2.0f, 3.0f, 4.0f};
+        check(!gx::zfreeze_plane_from_vertices(p, vp, pos, 0, 0, width, height, scale, aspect, plane));
+        check(plane[0] == 1.0f && plane[1] == 2.0f && plane[2] == 3.0f && plane[3] == 4.0f);
+    };
+    for (float bad : {std::numeric_limits<float>::quiet_NaN(),
+                      std::numeric_limits<float>::infinity(),
+                      -std::numeric_limits<float>::infinity()}) {
+        for (int i = 0; i < 7; i++) {
+            float p[7]; std::copy(proj, proj + 7, p); p[i] = bad;
+            rejected_unchanged(p, viewport, vertices);
+        }
+        for (int i = 0; i < 6; i++) {
+            float vp[6]; std::copy(viewport, viewport + 6, vp); vp[i] = bad;
+            rejected_unchanged(proj, vp, vertices);
+        }
+        for (int i = 0; i < 9; i++) {
+            float pos[9]; std::copy(vertices, vertices + 9, pos); pos[i] = bad;
+            rejected_unchanged(proj, viewport, pos);
+        }
+        rejected_unchanged(proj, viewport, vertices, 640, 528, bad);
+        rejected_unchanged(proj, viewport, vertices, 640, 528, 1.0f, bad);
+    }
+    rejected_unchanged(proj, viewport, vertices, 0);
+    rejected_unchanged(proj, viewport, vertices, 640, -1);
+    rejected_unchanged(proj, viewport, vertices, 640, 528, 0.0f);
+    rejected_unchanged(proj, viewport, vertices, 640, 528, -1.0f);
+    float overflowing[9]; std::copy(vertices, vertices + 9, overflowing);
+    overflowing[0] = std::numeric_limits<float>::max();
+    rejected_unchanged(proj, viewport, overflowing);
     std::printf("render_math_test: %d failures\n", failures);
     return failures ? 1 : 0;
 }
