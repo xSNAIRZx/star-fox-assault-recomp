@@ -4,6 +4,15 @@ How to drive a game without a controller, record and replay a run, measure the p
 find out which guest code or which draw is responsible for something. Environment variables
 are `GCN_*`; none of this is needed to play.
 
+For this project's two open gameplay bugs on Windows, use
+[the capture script and guide](gameplay-capture.md). It isolates saves,
+copies replays before the runtime writes scratch cards, and records build/launch details.
+`GCN_DRAWLOG=N` and `GCN_MTXLOG=N` select a presented frame, not a continuous log;
+`GCN_RAM_DUMP_AT=N` selects a submitted frame. Use the emitted RAM mapping to align them.
+`GCN_VERTCHECK` is capped and checks only submitted transformed XYZ positions. Silence
+does not establish that geometry, projection or render state is correct. The published
+rc.3 archive lacks the later vertex-check and live-stack additions; rebuild current source.
+
 ## Input logging and replay
 
 Every run of the desktop frontend records the controller state the guest polled, keyed by

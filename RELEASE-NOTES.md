@@ -1,3 +1,13 @@
+# Source-only Windows capture tooling
+
+- Added `tools/Capture-Gameplay.ps1` and `runtime/docs/gameplay-capture.md` for isolated
+  thread-crash and boss captures, replay copies, selected-frame diagnostics, build
+  identity, streamed logs, plan-only inspection and optional bounded startup checks.
+- Corrected draw-log frame selection, submitted/presented frame alignment, replay
+  instructions and the limits of non-finite vertex checks. Float-like pointer bits
+  alone do not identify the store type or writer.
+- No gameplay repair or release-asset replacement is included. Both defects remain open.
+
 # 0.2.0-rc.3 - Peregrine Forge Windows x64 source-build release candidate
 
 ## Release summary

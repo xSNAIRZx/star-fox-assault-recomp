@@ -1,5 +1,40 @@
 # Validation summary
 
+## Windows gameplay capture tooling - 2026-11-03
+
+Added `tools/Capture-Gameplay.ps1`, its ISO-free synthetic-process tests, and
+[the Windows capture guide](runtime/docs/gameplay-capture.md). No gameplay behavior
+was changed and neither reported defect was reproduced or fixed.
+
+- Windows PowerShell 5.1 synthetic-process checks passed: Unicode/space/apostrophe
+  argument preservation, separate stdout/stderr, child exit-code recording, inherited
+  GCN environment removal without modifying the parent, mode selection, replay/card
+  copying, plan-only with no files/processes, invalid arguments/missing inputs and
+  bounded termination. These exercise orchestration, not guest correctness.
+- Launcher tool audit passed: 110 paths, zero problems. Both new scripts parsed and
+  `git diff --check` passed.
+- After a user-supplied local CISO became available, image validation and the current
+  diagnostic native build completed. A 15-second bounded startup produced OpenGL,
+  guest-clock, thread-store and live-stack output. It was forcibly stopped; this is
+  startup/capture evidence, not mission or crash-reproduction evidence.
+- The first fresh-card recording could not replay: input logging precedes creation
+  of the initial card, so the recording lacked a starting snapshot. The guide now
+  explains a fresh-card initialization followed by a new recording with that card;
+  the script warns on fresh runs and rejects replay folders missing the snapshot.
+  It does not invent a starting snapshot from a later card state.
+- A subsequent 8-second run with a copied starting card, and an 8-second replay of
+  that recording, both produced a selected frame-10 PNG, a 24 MiB RAM dump and matrix
+  logging. The RAM line mapped submitted frame 10 to presented frame 10 in this run;
+  that equality is not assumed generally. The PNG was inspected: this early frame
+  was black, so it does not demonstrate readable menus or gameplay. Replay loaded
+  the copied card/input data and then returned to live input when the short log
+  ended. It does not establish a deterministic boss/crash reproduction.
+
+Untested: capturing the disappearing boss, capturing the reported invalid-pointer
+transition, a crash-generated RAM dump, mission completion and save/reload gameplay.
+No public release assets were created or replaced. Private images, logs, cards, RAM,
+generated game code and native game binaries are excluded from the source commit.
+
 Scope: bounded setup, build and startup checks completed on one tested Windows PC.
 Passing checks here do not establish full-game compatibility.
 
@@ -303,8 +338,8 @@ Changes made, all diagnostics-only with no effect on guest behavior or on what i
   `[vertcheck] frame <n> draw <n> (command <n>): ...`, naming whether the position matrix was
   already bad (a bad matrix is printed in full) or was finite while the arithmetic produced the
   bad values. The check only reports the draw; it does not discard or change rendered geometry.
-  A report shows a numerical problem worth investigating, while no report means this check saw
-  finite transformed positions and the visibility problem lies elsewhere. Tested by
+  A report shows a numerical problem worth investigating. No report does not rule out
+  geometry or render-state problems: the check only sees submitted positions and is capped. Tested by
   `runtime/tests/vertex_sanity_test.cpp` over infinity, NaN, denormals, a finite maximum, the
   stride, and both causes in the message.
 - Every `[guard]` and `[thread-watch]` line is now followed by `live guest stack: <addr> ...`,
@@ -326,17 +361,17 @@ What a person must capture next, and nothing here replaces it:
 
 1. Boss: replay or play to the encounter with `GCN_VERTCHECK=1`, and keep the log from the
    moment the boss is last drawn to the moment it is missing. A `[vertcheck]` line names the
-   frame, the draw and the matrix. No such line means the geometry was still finite and the
-   disappearance is in visibility, culling or the scene graph instead.
-2. Boss, if there is no `[vertcheck]` line: capture the same window with `GCN_DRAWLOG=1`,
+   frame, the draw and the matrix. No such line does not establish a cause: the check only sees submitted positions and
+   is capped; inspect visibility, transforms and render state.
+2. Boss, if there is no `[vertcheck]` line: capture the same window with `GCN_DRAWLOG=<presented-frame>`,
    `GCN_MTXLOG=<frame>` for a frame with the boss and one without, and `GCN_RAM_DUMP_AT=` those
    two frames, so the draw list, the matrices and memory can be compared frame to frame.
 3. Crash: build with `-DiagnosticBuild`, then replay the run that crashes with
    `GCN_WATCH_ADDR=800000E4` and `GCN_GUARD=800000E4`. The `[thread-watch]` line names the store
-   that wrote the word and the guest stack under it names the code; `GCN_RAM_DUMP` beside it
+   that changed the word and the guest stack under it names the code; `GCN_RAM_DUMP` beside it
    holds the thread structure as it was at the failure.
-4. Both captures should use `GCN_INPUT` so the run is repeatable, and neither should be taken
-   from a session that also ran a different build.
+4. Record controller input and replay the entire recording directory with `--replay=<dir>`.
+   Keep build identities separate. The launcher clears `GCN_INPUT`; it is not a replay option.
 
 ### 2026-11-03 — controls, build progress and Windows test startup
 

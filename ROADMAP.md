@@ -18,23 +18,28 @@ See [VALIDATION.md](VALIDATION.md) for the evidence and its limits.
 
 ## 1. Stabilize the first mission
 
+Use [the Windows capture guide](runtime/docs/gameplay-capture.md) and `tools/Capture-Gameplay.ps1`.
+Draw/matrix logs select a presented frame; RAM dumps select submitted frames. Correlate
+them using the `[ram] frame ... (presented ...)` line rather than assuming equal counts.
+
 - [ ] Record repeatable steps for the boss disappearing, including when it happens near the screen center,
       with `GCN_VERTCHECK=1`: a `[vertcheck]` line names the frame and draw whose transformed positions
-      stopped being finite, and prints the position matrix when that was the cause.
-- [ ] If no `[vertcheck]` line appears, capture the same window with `GCN_DRAWLOG=1`, `GCN_MTXLOG=<frame>`
+      stopped being finite, and prints the position matrix when it was non-finite. A report
+      is not proof that the draw is the boss; no report does not rule out render-state bugs.
+- [ ] If no `[vertcheck]` line appears, capture the same window with `GCN_DRAWLOG=<presented-frame>`, `GCN_MTXLOG=<frame>`
       and `GCN_RAM_DUMP_AT=<frame>` for a frame with the boss and one without, so both can be compared.
 - [ ] Trace visibility, module state and rendering around the failing encounter; identify the cause before changing behavior.
 - [ ] Build a diagnostic build (`tools/Build-StarFoxAssault.ps1 -DiagnosticBuild`) and replay the crashing run
       with `GCN_WATCH_ADDR=800000E4` and `GCN_GUARD=800000E4`: the `[thread-watch]` line names the store that
-      writes the float and the `live guest stack` line under it names the code that was running.
+      writes the invalid word and the `live guest stack` line under it names the code that was running.
 - [ ] Trace the corrupted current-thread pointer and fix the responsible memory write or runtime behavior.
 - [ ] Capture the guard line and RAM dump from a normal-speed run that reaches the current-thread
-      failure, and identify the store that writes the float.
+      failure, and identify the store that writes the invalid word.
 - [ ] Complete the first mission at normal speed, including the boss, transition and save/reload, without the reported failures.
 
 **Evidence so far:** the saved trace resolves to `0x80136C60` inside `fn_80136C44`, with the
 reported address `0x3F0002C8` — `0x2C8` past `0x3F000000`, the float `0.5f` — in the word the
-SDK loads as the current-thread pointer. A float store landed in a pointer; the writer is not
+SDK loads as the current-thread pointer. The pointer contained float-like bits; the writer and store type are not
 yet identified, and the boss has no recording that matches its evidence. Neither defect has
 been reproduced or fixed. The capture paths for both are now in the runtime: `GCN_VERTCHECK`
 names a draw whose transformed positions stopped being finite, and every guard or store line

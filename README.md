@@ -63,6 +63,11 @@ Cancelled or failed builds leave the previous native executable in place. A succ
 
 ## Build without the launcher
 
+For either open gameplay bug, see [the Windows capture guide](runtime/docs/gameplay-capture.md).
+`tools/Capture-Gameplay.ps1` records isolated sessions and supports replay, per-store thread
+watching in diagnostic builds, and selected boss-frame captures. These are diagnostic tools,
+not gameplay fixes; current-source diagnostics are not all present in the published rc.3 ZIP.
+
 Run this from the extracted project folder, using the location of your own image:
 
 ```powershell
