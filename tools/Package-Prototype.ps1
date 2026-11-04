@@ -181,7 +181,7 @@ try {
 
     # Ship the repository's own documents. Earlier revisions embedded copies here, which
   # drifted from the maintained files whenever the notes changed.
-  foreach ($document in @('README-PROTOTYPE.txt','VALIDATION.md')) {
+  foreach ($document in @('README-PROTOTYPE.txt','VALIDATION.md','README.md','ROADMAP.md','RELEASE-READINESS.md')) {
     $documentSource = Join-Path $projectDir $document
     if (-not (Test-Path -LiteralPath $documentSource -PathType Leaf)) { throw "Required repository document is missing: $document" }
     Add-PackageFile $documentSource $document

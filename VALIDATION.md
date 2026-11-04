@@ -1,5 +1,14 @@
 # Validation summary
 
+## Final-readiness audit — 2026-11-03
+
+See [RELEASE-READINESS.md](RELEASE-READINESS.md) for the latest fresh Windows build,
+13/13 runtime checks, host-tool and package/update verification, bounded native
+startup evidence, distribution boundary and unresolved release blockers. These
+checks do not resolve the boss-visibility or current-thread-pointer gameplay bugs.
+The new image-free CI includes Windows and Linux checks; hosted results must be
+reported separately from local results.
+
 ## Windows gameplay capture tooling - 2026-11-03
 
 Added `tools/Capture-Gameplay.ps1`, its ISO-free synthetic-process tests, and

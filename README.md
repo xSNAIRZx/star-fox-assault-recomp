@@ -1,5 +1,8 @@
 # Peregrine Forge — Star Fox Assault Recomp
 
+**Release gate:** see [RELEASE-READINESS.md](RELEASE-READINESS.md) for current build/test evidence,
+reproduction commands, distribution boundaries and the unresolved gameplay blockers.
+
 **Launcher brand: Peregrine Forge.** The game title identifies this independent fan project; Peregrine Forge is the launcher name.
 
 An experimental Windows x64 native recompilation project for the USA GameCube release **GF7E01**. The launcher imports your own ISO/CISO, recompiles its PowerPC code and builds a native Windows executable locally. The game image remains read-only. Windows 10 version 1903 or newer and an OpenGL 3.3-capable graphics driver are required.

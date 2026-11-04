@@ -1,0 +1,26 @@
+name: Host checks (no game content)
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Windows scripts, runtime tests and host builds
+        shell: powershell
+        run: ./tools/Test-ReleaseHost.ps1
+  portable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: cmake -S runtime/tests -B build-tests -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build-tests --parallel 4
+      - run: ctest --test-dir build-tests --output-on-failure --no-tests=error
+      - run: cmake -S runtime/tools/native -B build-host -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build-host --parallel 4
