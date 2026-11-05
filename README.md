@@ -13,9 +13,9 @@ An experimental Windows x64 native recompilation project for the USA GameCube re
 
 *Custom project cover based on the launcher's hangar artwork. This is fan-project artwork, not the original retail box cover.*
 
-[Latest available download: experimental 0.2.0-rc.3](https://github.com/xSNAIRZx/star-fox-assault-recomp/releases/tag/v0.2.0-rc.3) · [Planned updates](ROADMAP.md) · [Validation and known issues](VALIDATION.md)
+[Latest available download: experimental 0.2.0-rc.4](https://github.com/xSNAIRZx/star-fox-assault-recomp/releases/tag/v0.2.0-rc.4) · [Planned updates](ROADMAP.md) · [Validation and known issues](VALIDATION.md)
 
-The source repository includes follow-up launcher and safety changes that are not in the rc.3 download. Treat the ZIP as an older candidate until a refreshed package is built and validated.
+The rc.4 download packages the launcher, builder and HD work through 5 November 2026. It is still an experimental candidate: see the status below.
 
 ## Launcher preview
 
@@ -36,7 +36,7 @@ The distribution contains source, original launcher artwork, licensed display an
 
 ## Experimental status
 
-The current source candidate is **0.2.0-rc.3**. Its package archive passed extraction, payload-hash, forbidden-content, asset-allowlist and PowerShell parser checks. The empty-cache **Import & Build** and bounded startup evidence below is from rc.2; those checks were not repeated for rc.3. This evidence verifies setup and limited startup only, not full-game compatibility.
+The current source candidate is **0.2.0-rc.4**. Its package archive passed extraction, payload-hash, forbidden-content, asset-allowlist and PowerShell parser checks, and the update install and rollback tests. The empty-cache **Import & Build** and bounded startup evidence below is from rc.2; those checks were not repeated through the launcher UI for rc.3 or rc.4. This evidence verifies setup and limited startup only, not full-game compatibility.
 
 First-mission flight, readable menus and saved-profile persistence have been tested. **The recorded first-boss disappearance is prevented by the combined arithmetic candidate in a bounded diagnostic replay; fresh live confirmation and boss completion are pending. The current-thread-pointer crash remains unresolved.** Mission completion, later missions, complete audio fidelity and all physical controllers have not been verified. This release candidate is suitable for testing; it is not a stable full-game release.
 
@@ -71,7 +71,7 @@ Cancelled or failed builds leave the previous native executable in place. A succ
 For either open gameplay bug, see [the Windows capture guide](runtime/docs/gameplay-capture.md).
 `tools/Capture-Gameplay.ps1` records isolated sessions and supports replay, per-store thread
 watching in diagnostic builds, and selected boss-frame captures. These are diagnostic tools,
-not gameplay fixes; current-source diagnostics are not all present in the published rc.3 ZIP.
+not gameplay fixes.
 
 Run this from the extracted project folder, using the location of your own image:
 

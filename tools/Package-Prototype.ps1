@@ -2,7 +2,7 @@ param(
   [switch]$IncludeNativePrototype,
   [string]$NativePath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'user-data\verification\desktop-release\Release\assault.exe'),
   [string]$HostToolPath = (Join-Path $PSScriptRoot 'native\assault-image-tool.exe'),
-  [string]$ReleaseVersion = '0.2.0-rc.3',
+  [string]$ReleaseVersion = '0.2.0-rc.4',
   [string]$ArchiveName = '',
   [string]$Stamp = (Get-Date -Format 'yyyyMMdd-HHmmss')
 )

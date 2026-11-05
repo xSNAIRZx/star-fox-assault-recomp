@@ -1,4 +1,22 @@
-# Unreleased — 2026-11-05 DDS packs, updater, crash hunting
+# 0.2.0-rc.4 - Windows x64 source-build release candidate
+
+Experimental prerelease, not a stable full-game release. rc.4 packages everything listed
+under the dated headings below and the "Source changes after the rc.3 package" section:
+launcher polish and keyboard/controller navigation, the build pre-flight and readable build
+failures, the faster native builder, optional HD enhancements (anisotropic filtering, PNG/DDS
+and Dolphin-named texture packs, soft particles), presets, Crash Reports bundles and an
+update installer that skips unknown documentation instead of failing.
+
+The package was checked as an archive (extraction, per-file SHA-256, content and asset
+allowlists, PowerShell parsing) and with the update install, rollback, traversal, hash and
+unknown-document tests. It was not launched through the launcher UI with a game image. On the
+tested machine the native game built from this source, and a diagnostic build ran 60,000 frames
+of scripted first-mission input and attract loop before ending in a module-reload fault (see
+VALIDATION.md). The first-boss visibility issue and the current-thread-pointer crash remain
+unresolved, and that module-reload fault is open. Mission
+completion, later missions, complete audio fidelity and physical controllers remain unverified.
+
+## 2026-11-05 DDS packs, updater, crash hunting
 
 - **DDS texture packs**: BC1, BC2, BC3 and BC7 DDS replacements (Dolphin's usual
   format) are uploaded to the GPU compressed, with the file's own mip levels; Mod
@@ -12,7 +30,7 @@
 - **Crash hunting**: `GCN_THREAD_WATCH_BAD=1` makes a diagnostic build report only
   bad current-thread-pointer stores, so long scripted runs keep full speed.
 
-# Unreleased — 2026-11-05 polish, Dolphin packs, navigation
+## 2026-11-05 polish, Dolphin packs, navigation
 
 - **Dolphin HD texture packs** load in the native build: Dolphin's `tex1_` names are
   matched (XXH64 texel and palette hashes, `$` wildcards, `_m`), any whole-number
@@ -33,7 +51,7 @@
 - Not reachable by scripted input from a fresh save: a ground level (VS mode needs a
   second pad), so anisotropic filtering and soft particles remain unchecked there.
 
-# Unreleased — 2026-11-05 HD enhancements
+## 2026-11-05 HD enhancements
 
 All off by default; Systems & Controls has an HD Enhancements section and an
 "Apply HD preset" button (4x resolution, 16x anisotropic filtering, trilinear, sharp).
@@ -58,7 +76,7 @@ All off by default; Systems & Controls has an HD Enhancements section and an
   pack replaced 115 of 117 textures with correct mapping; no frame took over 50 ms in
   any variant.
 
-# Unreleased — 2026-11-05 native builder
+## 2026-11-05 native builder
 
 Measured on a 16-core/32-thread desktop with the cached SDL2 and build tools:
 
@@ -82,7 +100,7 @@ Measured on a 16-core/32-thread desktop with the cached SDL2 and build tools:
 - "Close the running game" checks only this project's `assault.exe`, not any process
   with that name, matching the launcher.
 
-# Unreleased — 2026-11-05 launcher polish
+## 2026-11-05 launcher polish
 
 - Fix Systems & Controls crashing on open ("op_Subtraction") so no settings
   appeared: two divider widths were parsed as `Width - (50,1)`.
@@ -105,7 +123,7 @@ Measured on a 16-core/32-thread desktop with the cached SDL2 and build tools:
 - About shows the version from `release.json` and the current known limitations.
 - Scrollbars are still the light Windows default.
 
-# Unreleased — 2026-11-05 launcher build flow and settings
+## 2026-11-05 launcher build flow and settings
 
 - Import & Build first checks free disk space (3 GB), that the launcher folder is
   writable, that the tool download hosts are reachable when tools are not yet
@@ -121,7 +139,7 @@ Measured on a 16-core/32-thread desktop with the cached SDL2 and build tools:
 - Not yet checked in the launcher window on a desktop with a real build: the
   pre-flight dialog, the failure view and the download progress text.
 
-# Unreleased — 2026-11-04 controls and correctness checks
+## 2026-11-04 controls and correctness checks
 
 - Honor CPU-local FPSCR NI result flushing, preserving signed zero; correct
   paired-sum result flags and preserve copied lanes. Regression coverage includes
@@ -148,7 +166,7 @@ Measured on a 16-core/32-thread desktop with the cached SDL2 and build tools:
 - These source fixes have synthetic regression coverage. They do not establish
   that the disappearing boss or current-thread-pointer failure is repaired.
 
-# Source-only Windows capture tooling
+## Source-only Windows capture tooling
 
 - Added `tools/Capture-Gameplay.ps1` and `runtime/docs/gameplay-capture.md` for isolated
   thread-crash and boss captures, replay copies, selected-frame diagnostics, build
@@ -195,8 +213,8 @@ ships it.
 
 ## Source changes after the rc.3 package
 
-These launcher changes are in the repository but not in the rc.3 archive; they need a Windows
-repackaging run before they reach a download.
+These launcher changes were not in the rc.3 archive; rc.4 is the first package that includes
+them.
 
 - The status line now starts after the navigation row and is sized to the space actually free,
   so it no longer sits on top of the About button at the minimum window size. Long messages are

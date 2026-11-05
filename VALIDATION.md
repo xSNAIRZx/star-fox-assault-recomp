@@ -208,6 +208,16 @@ compilation succeeded, and `git diff --check` passed; no gameplay or launcher GU
 | Full-game compatibility, mission completion and later missions | Not established |
 | First-boss visibility and invalid-current-thread-pointer crash | Unresolved |
 
+## rc.4 package checks — 2026-11-05
+
+The rc.4 source package was built from the committed tree and passed archive creation,
+extraction, per-file SHA-256, forbidden-content, asset-allowlist and packaged PowerShell parser
+checks. The update install, rollback, path-traversal, hash-rejection and unknown-document tests
+ran against that exact ZIP. Before packaging, the full host check passed (15 of 15 runtime tests,
+133 launcher core tests, the 114-path launcher tool audit, Windows builds) and hosted CI passed.
+The archive digest is published with the release and in its `.zip.sha256` sidecar. Not run with
+this package: the launcher UI with a game image, an empty-cache Import & Build, and any gameplay.
+
 ## rc.3 package checks — 2026-11-03
 
 The branded rc.3 launcher and source package passed archive creation, extraction, portable forward-slash

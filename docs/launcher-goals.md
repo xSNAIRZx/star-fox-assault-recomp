@@ -10,7 +10,8 @@ Tick items here as they land, in the same PR as the change.
 - **Not yet verified on a desktop:** PR #1 passed hosted Windows CI (PowerShell 5.1 parse, 110-path launcher audit, update tests) but the launcher window itself has not been opened with these changes. Check before calling them verified: switch pages; install a local ZIP (window stays responsive); corrupt `settings.json` once (expect a status notice and a `settings.corrupt-*.json` copy); launch with a controls file in a path containing spaces.
 - **Also done, 2026-11-05:** build pre-flight, readable build failures, phase timing and download sizes (Tier 2), and the single settings schema in `tools/LauncherCore.ps1` with its tests (Tier 3). The launcher window starts with these changes; the pre-flight dialog, failure view and download text still need a desktop check with a real build.
 - **Also done, 2026-11-05 (polish):** fixed the Systems & Controls crash on open, DPI awareness with scaled layout, "&" in labels, minimum-size fit, empty states, readable disabled buttons, header bands, matching page names, Settings save/unsaved handling and refreshed About text. See RELEASE-NOTES.md.
-- **Next:** ship rc.4 (step 2 of the order below).
+- **Done, 2026-11-05:** rc.4 published as an experimental prerelease with its package digest. The desktop and clean-machine UI walkthroughs below are still open.
+- **Next:** decide C# vs PowerShell (step 3 of the order below); then stop committing the launcher exe and tidy the root, now that rc.4 ships the tolerant updater.
 - **Open decision:** keep the launcher UI in PowerShell or port it to C#. Decide before the Tier 3 module split.
 
 ## What the launcher is today
@@ -19,7 +20,7 @@ One ~1,860-line PowerShell 5.1 + WinForms script behind a small C# bootstrap exe
 
 Already solid: atomic settings writes, build-to-image identity binding, SHA-256-pinned portable toolchain, cancellable build worker with a progress file, previous-exe retention, checksum-verified save restore, capped texture-pack import, the launcher path audit and package allowlists.
 
-Main weak spots: every control is placed with absolute coordinates (now in 96-DPI units scaled to the display, checked at 125% and the 1180×720 minimum); switching pages disposes and rebuilds every control; scrollbars use the light Windows default; the published rc.3 download predates current source.
+Main weak spots: every control is placed with absolute coordinates (now in 96-DPI units scaled to the display, checked at 125% and the 1180×720 minimum); switching pages disposes and rebuilds every control; scrollbars use the light Windows default.
 
 ## Tier 1 — Correctness and reliability
 
@@ -57,7 +58,7 @@ Main weak spots: every control is placed with absolute coordinates (now in 96-DP
 
 ## Tier 4 — Distribution, trust and release
 
-- [ ] Publish rc.4: package current source, run the full checks against that exact ZIP, publish with its digest. Per [RELEASE-READINESS.md](../RELEASE-READINESS.md), rc.2/rc.3 evidence cannot certify it.
+- [x] Publish rc.4: package current source, run the full checks against that exact ZIP, publish with its digest. Per [RELEASE-READINESS.md](../RELEASE-READINESS.md), rc.2/rc.3 evidence cannot certify it. Published 2026-11-05 as an experimental prerelease; package and update checks ran against the exact ZIP, the launcher UI walkthrough did not.
 - [ ] Run the launcher UI end to end on a clean Windows machine or Windows Sandbox: Import & Build, Play Native, cancel, update, rollback, save restore (readiness gate 3).
 - [x] Keep CI-built launcher, inspector and package with SHA-256 as a workflow artifact.
 - [ ] Stop committing `Star Fox Assault Recomp.exe`: attach the CI-built exe to releases instead. The package and updater required-file lists name it at the repo root, so change them together.
