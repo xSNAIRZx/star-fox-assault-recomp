@@ -1,3 +1,27 @@
+# Unreleased — 2026-11-05 native builder
+
+Measured on a 16-core/32-thread desktop with the cached SDL2 and build tools:
+
+| Build | Before | After |
+| --- | --- | --- |
+| Fresh build folder | 54.7 s (8 compile jobs) | 35.4 s (30 jobs, chosen automatically) |
+| After editing one runtime source | 9.7 s (full re-configure) | 3.9 s (Ninja recompiles that file) |
+| Nothing changed | 3.1 s | 3.1 s |
+
+- Compile jobs now default to the hardware threads less two, limited by free memory at
+  about 512 MB per job (the largest recompiled file peaked near 200 MB) and capped at 32.
+  `-Jobs N` still overrides it.
+- Only configure inputs (build scripts, CMake files, the recompiler and its tables) decide
+  whether CMake re-configures and regenerates the game code. Runtime C/C++ and shader
+  edits are left to Ninja. The full source fingerprint is still recorded in
+  `native-build-info.json`.
+- Fix an intermittent "Cannot index into a null array" failure on short incremental
+  builds, caused by matching Ninja's progress line against an array.
+- Progress-file updates retry when the launcher has the file open, instead of risking
+  a sharing-violation failure mid-build; the final state must still be written.
+- "Close the running game" checks only this project's `assault.exe`, not any process
+  with that name, matching the launcher.
+
 # Unreleased — 2026-11-05 launcher polish
 
 - Fix Systems & Controls crashing on open ("op_Subtraction") so no settings

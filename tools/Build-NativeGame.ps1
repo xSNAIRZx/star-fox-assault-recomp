@@ -2,7 +2,8 @@ param(
   [Parameter(Mandatory=$true)][string]$GameImage,
   [switch]$UsePortableToolchain,
   [string]$ProgressFile='', [string]$CancelFile='', [string]$BuildDirectory='',
-  [ValidateRange(1,32)][int]$Jobs=([Math]::Min(8,[Math]::Max(1,[Environment]::ProcessorCount-2))),
+  # 0 picks a count from the CPU and free memory (Get-BuildJobCount).
+  [ValidateRange(0,32)][int]$Jobs=0,
   [switch]$Offline, [switch]$DiagnosticBuild
 )
 $ErrorActionPreference='Stop'
@@ -21,8 +22,43 @@ function Set-BuildStatus([string]$state,[string]$phase,[string]$message,$percent
     [void][IO.Directory]::CreateDirectory((Split-Path -Parent $full))
     $pendingStatus=$full+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
     [IO.File]::WriteAllText($pendingStatus,([ordered]@{schema_version=1;state=$state;phase=$phase;message=$message;percent=$percent;executable=$(if($state -eq 'succeeded'){$executable}else{$null})} | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
-    if(Test-Path -LiteralPath $full){[IO.File]::Replace($pendingStatus,$full,$full+'.previous')}else{[IO.File]::Move($pendingStatus,$full)}
+    # The launcher reads this file several times a second, and File.Replace fails while a
+    # reader has it open. Retry briefly; a progress update that still cannot land is dropped
+    # rather than failing the build, but the final state must be written.
+    $final=$state -ne 'running'
+    $attempts=if($final){40}else{5}
+    for($try=1;$try -le $attempts;$try++){
+      try {
+        if(Test-Path -LiteralPath $full){[IO.File]::Replace($pendingStatus,$full,$full+'.previous')}else{[IO.File]::Move($pendingStatus,$full)}
+        break
+      } catch [IO.IOException] {
+        if($try -eq $attempts){
+          Remove-Item -LiteralPath $pendingStatus -Force -ErrorAction SilentlyContinue
+          if($final){throw}
+        } else {Start-Sleep -Milliseconds 50}
+      }
+    }
   }
+}
+# Parallel compile jobs: one per hardware thread less two, and no more than free memory allows
+# at about 512 MB each (the largest recompiled file peaked near 200 MB per compiler).
+function Get-BuildJobCount {
+  $byCpu=[Math]::Max(1,[Environment]::ProcessorCount-2)
+  $byMemory=$byCpu
+  try {
+    $freeMb=[double](Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop).FreePhysicalMemory/1024
+    $byMemory=[Math]::Max(1,[int][Math]::Floor($freeMb/512))
+  } catch { $byMemory=[Math]::Min(8,$byCpu) }
+  return [int][Math]::Max(1,[Math]::Min(32,[Math]::Min($byCpu,$byMemory)))
+}
+# Only this project's game counts as running: another program called assault.exe must not
+# block a build. A process whose path cannot be read is still treated as running.
+function Test-NativeGameRunning {
+  $target=[IO.Path]::GetFullPath($executable)
+  return [bool]@(Get-Process -Name assault -ErrorAction SilentlyContinue | Where-Object {
+    $path=$null; try{$path=$_.Path}catch{}
+    [string]::IsNullOrEmpty($path) -or [string]::Equals([IO.Path]::GetFullPath($path),$target,[StringComparison]::OrdinalIgnoreCase)
+  }).Count
 }
 function Test-BuildCancel {
   if($CancelFile -and (Test-Path -LiteralPath $CancelFile)){throw [OperationCanceledException]::new('Build cancelled.')}
@@ -38,10 +74,13 @@ function Invoke-BuildProcess([string]$FilePath,[string[]]$Arguments,[string]$Pha
   $last=''
   while(-not $script:active.HasExited){
     Test-BuildCancel
-    $line=Get-Content -LiteralPath $stdout -Tail 1 -ErrorAction SilentlyContinue
+    # Always one string: -match on an array filters it and leaves $Matches unset, which
+    # failed short incremental builds with "Cannot index into a null array".
+    $line=[string](@(Get-Content -LiteralPath $stdout -Tail 1 -ErrorAction SilentlyContinue) | Select-Object -Last 1)
     if($line -and $line -ne $last){
       $last=$line
-      if($line -match '^\[(\d+)/(\d+)\]'){Set-BuildStatus 'running' $Phase $line ([Math]::Round(100.0*[int]$Matches[1]/[int]$Matches[2],1))}
+      $progress=[regex]::Match($line,'^\[(\d+)/(\d+)\]')
+      if($progress.Success -and [int]$progress.Groups[2].Value -gt 0){Set-BuildStatus 'running' $Phase $line ([Math]::Round(100.0*[int]$progress.Groups[1].Value/[int]$progress.Groups[2].Value,1))}
       else {Write-Host $line}
     }
     Start-Sleep -Milliseconds 180
@@ -54,17 +93,23 @@ function Invoke-BuildProcess([string]$FilePath,[string[]]$Arguments,[string]$Pha
   $script:active.Dispose();$script:active=$null
   if($code -ne 0){throw "$Phase failed (exit $code). See the build log for details."}
 }
-function Get-SourceFingerprint {
+# -ConfigureOnly limits the set to what the CMake configure step itself reads: build scripts,
+# CMake files, the recompiler and its tables. C/C++ and shader sources are left to Ninja, which
+# tracks them (runtime sources are a CONFIGURE_DEPENDS glob), so editing one no longer reruns
+# the whole configure and recompilation from the image. The full set is the build record.
+function Get-SourceFingerprint([switch]$ConfigureOnly) {
   $paths=@('CMakeLists.txt','tools\portable-toolchain.json','tools\Build-NativeGame.ps1','tools\Build-StarFoxAssault.ps1','tools\Ensure-PortableToolchain.ps1','tools\Build-CacheSignature.ps1')
+  $extensions=@('.py','.txt','.cmake','.in','.rc','.manifest')
+  if(-not $ConfigureOnly){$extensions+=@('.c','.cc','.cpp','.h','.hpp','.inc','.glsl','.glslinc','.frag','.vert','.geom','.comp')}
   foreach($folder in @('runtime','recomp','decomp\config\GF7E01')){
-    $paths+=@(Get-ChildItem -LiteralPath (Join-Path $project $folder) -Recurse -File | Where-Object {$_.Extension -in @('.c','.cc','.cpp','.h','.hpp','.py','.txt','.cmake','.in','.rc','.manifest','.inc','.glsl','.glslinc','.frag','.vert','.geom','.comp') -and $_.FullName -notmatch '[\\/](build|__pycache__)[\\/]'} | ForEach-Object {$_.FullName.Substring($project.Length+1)})
+    $paths+=@(Get-ChildItem -LiteralPath (Join-Path $project $folder) -Recurse -File | Where-Object {$_.Extension -in $extensions -and $_.FullName -notmatch '[\\/](build|__pycache__)[\\/]'} | ForEach-Object {$_.FullName.Substring($project.Length+1)})
   }
   return Get-FileSetFingerprint $project $paths
 }
 try {
   Set-BuildStatus 'running' 'Checking image' 'Validating your local ISO/CISO.'
   if(-not(Test-Path -LiteralPath $GameImage -PathType Leaf)){throw 'The selected game image was not found.'}
-  if(Get-Process -Name assault -ErrorAction SilentlyContinue){throw 'Close the running game before rebuilding.'}
+  if(Test-NativeGameRunning){throw 'Close the running game before rebuilding.'}
   $inspector=Join-Path $project 'tools\native\assault-image-tool.exe'
   if(-not(Test-Path -LiteralPath $inspector)){throw 'The image inspector is missing. Restore the complete launcher package.'}
   $inspection=& $inspector ("--inspect-image=$GameImage")
@@ -93,7 +138,8 @@ try {
   }
   $env:PATH=$tools.compilerDirectory+';'+(Split-Path $tools.cmake)+';'+(Split-Path $tools.ninja)+';'+(Split-Path $tools.python)+';'+$oldPath
   $fingerprint=Get-SourceFingerprint
-  $settings=[ordered]@{project=$project;image=$GameImage;image_size=$image.Length;image_modified=$image.LastWriteTimeUtc.Ticks;image_sha256=$imageSha256;source=$fingerprint;compiler=$tools.cc;diagnostic=[bool]$DiagnosticBuild}
+  $configureFingerprint=Get-SourceFingerprint -ConfigureOnly
+  $settings=[ordered]@{project=$project;image=$GameImage;image_size=$image.Length;image_modified=$image.LastWriteTimeUtc.Ticks;image_sha256=$imageSha256;configure_inputs=$configureFingerprint;compiler=$tools.cc;diagnostic=[bool]$DiagnosticBuild}
   $signature=$settings | ConvertTo-Json -Compress
   $statePath=Join-Path $BuildDirectory 'configure-state.json';$configureNeeded=$true;$freshConfigure=$false
   if((Test-Path -LiteralPath $statePath) -and (Test-Path -LiteralPath (Join-Path $BuildDirectory 'CMakeCache.txt'))){
@@ -109,15 +155,16 @@ try {
     if($freshConfigure -or (-not(Test-Path -LiteralPath $statePath) -and (Test-Path -LiteralPath (Join-Path $BuildDirectory 'CMakeCache.txt')))){$configure+='--fresh'}
     Invoke-BuildProcess $tools.cmake $configure 'Recompiling game'
     [ordered]@{signature=$signature;project=$project;compiler=$tools.cc} | ConvertTo-Json | Set-Content -LiteralPath $statePath -Encoding UTF8
-  } else {Set-BuildStatus 'running' 'Using build cache' 'Source and image are unchanged; checking the cached native build.'}
-  Set-BuildStatus 'running' 'Compiling native executable' 'Compiling the recompiled game and runtime.'
+  } else {Set-BuildStatus 'running' 'Using build cache' 'Build settings and image are unchanged; compiling only what changed.'}
+  if($Jobs -le 0){$Jobs=Get-BuildJobCount}
+  Set-BuildStatus 'running' 'Compiling native executable' ('Compiling the recompiled game and runtime ({0} parallel jobs).' -f $Jobs)
   Invoke-BuildProcess $tools.cmake @('--build',$BuildDirectory,'--target','assault','--parallel',[string]$Jobs) 'Compiling native executable'
   Test-BuildCancel
   $built=Join-Path $BuildDirectory 'assault.exe'
   if(-not(Test-Path -LiteralPath $built -PathType Leaf)){throw 'The build did not produce assault.exe.'}
   $imageAfterBuild=Get-Item -LiteralPath $GameImage -ErrorAction Stop
   if($imageAfterBuild.Length -ne $image.Length -or $imageAfterBuild.LastWriteTimeUtc.Ticks -ne $image.LastWriteTimeUtc.Ticks){throw 'The selected game image changed during the build. The previous native executable was kept; run the build again with the unchanged image.'}
-  if(Get-Process -Name assault -ErrorAction SilentlyContinue){throw 'Close the game before installing the new build.'}
+  if(Test-NativeGameRunning){throw 'Close the game before installing the new build.'}
   Set-BuildStatus 'running' 'Installing native build' 'Keeping the previous executable until the new build is ready.'
   $destination=Split-Path -Parent $executable
   [void][IO.Directory]::CreateDirectory($destination)

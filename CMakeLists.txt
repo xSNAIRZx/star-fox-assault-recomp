@@ -34,7 +34,7 @@ gcn_add_game(
 )
 
 # MSBuild's /m parallelizes projects; /MP also parallelizes the generated C files.
-# Keep the same eight-worker limit as the launcher build action.
+# MSVC builds only; the launcher's Ninja build picks its job count from CPU and memory.
 if(MSVC)
   target_compile_options(game_recomp PRIVATE /MP8)
 endif()

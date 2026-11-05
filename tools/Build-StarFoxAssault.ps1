@@ -2,7 +2,7 @@ param(
   [Parameter(Mandatory=$true)][string]$GameImage,
   [switch]$UsePortableToolchain,
   [string]$ProgressFile='', [string]$CancelFile='', [string]$BuildDirectory='',
-  [ValidateRange(1,32)][int]$Jobs=([Math]::Min(8,[Math]::Max(1,[Environment]::ProcessorCount-2))),
+  [ValidateRange(0,32)][int]$Jobs=0,
   [switch]$Offline, [switch]$DiagnosticBuild
 )
 $ErrorActionPreference='Stop'
