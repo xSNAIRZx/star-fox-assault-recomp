@@ -1,6 +1,9 @@
 param(
   [Parameter(Mandatory=$true)][string]$ArchivePath,
-  [string]$TargetRoot = (Split-Path -Parent $PSScriptRoot)
+  [string]$TargetRoot = (Split-Path -Parent $PSScriptRoot),
+  # When set, the result (or the failure message) is also written here as JSON, so a caller
+  # running this installer as a separate process can read the outcome after it exits.
+  [string]$ResultPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -120,6 +123,15 @@ function Write-UpdateLog([string]$state,[string]$details) {
   } catch { }
 }
 
+function Write-ResultFile($result) {
+  if ([string]::IsNullOrWhiteSpace($ResultPath)) { return }
+  try {
+    $temp = $ResultPath + '.tmp'
+    [IO.File]::WriteAllText($temp,($result | ConvertTo-Json),(New-Object Text.UTF8Encoding($false)))
+    if (Test-Path -LiteralPath $ResultPath -PathType Leaf) { [IO.File]::Delete($ResultPath) }
+    [IO.File]::Move($temp,$ResultPath)
+  } catch {}
+}
 function Get-FileSha256([string]$path) { return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
 function Replace-UpdateFile([string]$source,[string]$destination,[string]$suffix) {
   $atomicBackup = $destination + '.' + $suffix + '-' + [Guid]::NewGuid().ToString('N')
@@ -249,10 +261,13 @@ try {
   $status = 'installed'
   $failureText = 'Update applied. Previous application files are retained in the backup folder; settings and user data were not included in the replacement set.'
   Write-UpdateLog $status $failureText
-  [pscustomobject]@{ Status=$status; Package=[IO.Path]::GetFileName($archivePath); FilesChanged=$changedCount; BackupPath=$backupRoot; LogPath=$logPath; Message=$failureText }
+  $result = [pscustomobject]@{ Status=$status; Package=[IO.Path]::GetFileName($archivePath); FilesChanged=$changedCount; BackupPath=$backupRoot; LogPath=$logPath; Message=$failureText }
+  Write-ResultFile $result
+  $result
 } catch {
   if (-not $failureText) { $failureText = $_.Exception.Message }
   Write-UpdateLog 'failed' $failureText
+  Write-ResultFile ([pscustomobject]@{ Status='failed'; Package=[IO.Path]::GetFileName($archivePath); FilesChanged=0; BackupPath=$backupRoot; LogPath=$logPath; Message=$failureText })
   throw $failureText
 } finally {
   if ($archive) { $archive.Dispose() }

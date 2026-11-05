@@ -1,0 +1,76 @@
+name: Bug report
+description: Report a launcher, build or gameplay problem
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing. **Do not attach your game image, extracted game files, saves, RAM dumps or unreviewed log bundles.** Remove personal paths (for example `C:\Users\<name>`) from anything you paste.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Launcher (window, settings, saves, mods)
+        - Import & Build
+        - Gameplay
+        - Graphics
+        - Audio
+        - Controls
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Release or commit
+      description: The release version (for example 0.2.0-rc.3) or the source commit you built from.
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 23H2
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver
+      placeholder: NVIDIA RTX 3060, driver 566.36
+  - type: input
+    id: controller
+    attributes:
+      label: Controller or input
+      placeholder: Keyboard and mouse / Xbox Series pad / DualSense
+  - type: input
+    id: location
+    attributes:
+      label: Mission or checkpoint
+      description: For gameplay issues, where it happened.
+  - type: textarea
+    id: settings
+    attributes:
+      label: Graphics settings
+      description: Internal resolution, aspect ratio, AA, filter, fullscreen, VSync.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the launcher
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Relevant log lines
+      description: Short excerpts only, such as `[guard]`, `[vertcheck]` or build error lines from the Crash Reports page or the build job log. Remove personal paths first.
+      render: text
