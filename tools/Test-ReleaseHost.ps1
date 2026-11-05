@@ -32,6 +32,7 @@ Invoke-Checked $paths.python @("$project/runtime/tests/ppc_integer_test.py",'--c
 Invoke-Checked $paths.python @("$project/runtime/tests/ppc_fp_compare_test.py",'--cc',"$bin/x86_64-w64-mingw32-clang.exe",'--work',"$project/user-data/verification/ppc-fp-compare")
 Invoke-Checked $paths.python @("$project/runtime/tests/ppc_paired_sum_test.py",'--cc',"$bin/x86_64-w64-mingw32-clang.exe",'--work',"$project/user-data/verification/ppc-paired-sum")
 Invoke-Checked $paths.python @("$project/runtime/tests/ppc_non_ieee_test.py",'--cc',"$bin/x86_64-w64-mingw32-clang.exe",'--work',"$project/user-data/verification/ppc-non-ieee")
+Invoke-Checked $paths.python @("$project/runtime/tests/context_restore_test.py",'--cc',"$bin/x86_64-w64-mingw32-clang.exe",'--work',"$project/user-data/verification/context-restore")
 $build=(Join-Path $project 'user-data/verification/release-host-tests').Replace('\','/')
 Invoke-Checked $paths.cmake @('--fresh','-S',"$project/runtime/tests",'-B',$build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',"-DCMAKE_MAKE_PROGRAM=$($paths.ninja)","-DCMAKE_C_COMPILER=$bin/x86_64-w64-mingw32-clang.exe", "-DCMAKE_CXX_COMPILER=$bin/x86_64-w64-mingw32-clang++.exe", "-DCMAKE_RC_COMPILER=$bin/llvm-windres.exe")
 Invoke-Checked $paths.cmake @('--build',$build,'--parallel','4')

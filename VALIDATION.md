@@ -19,6 +19,16 @@ generated-code checks pass; 14/14 runtime tests and the full Windows host runner
 pass. Paired-sum flags now describe the sum lane, with copied lanes preserved.
 Full exception flags, arithmetic rounding modes and estimate fidelity remain limits.
 
+A separate fresh-context restore regression found that PSF slots contain two
+packed binary32 lanes, while the runtime interpreted their combined bits as one
+binary64 PS1 value. A synthetic slot carrying PS1 -2.5 restored as about 0.03125
+on the baseline. The corrected reader expands the slot's second binary32 lane,
+preserving the full PS0 from its separate FPR slot. The actual context-reader test
+passes 32 PS0/PS1 value pairs plus control-register and FPSCR checks; the full host
+suite and native rebuild pass. Existing-binding snapshots bypass this reader.
+No claim is made that this separate correction fixes the recorded thread-pointer
+failure or the boss. Lazy-FPU valid-state semantics remain a separate concern.
+
 The NI candidate's clean native build SHA-256 is
 `44094fe32c5f82371fc7623c1edfdd852bec1d3a740c17ec5d692ba142f8272f`.
 A separate private build adds a narrow log-only normalizer trace. Replaying the

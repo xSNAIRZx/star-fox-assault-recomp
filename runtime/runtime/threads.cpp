@@ -84,8 +84,12 @@ static void context_to_cpu(CPU* c, uint32_t ctx) {
     for (int i = 0; i < 32; i++) {
         uint64_t v = ((uint64_t)mem_r32(ctx + CTX_FPR + 8 * i) << 32) | mem_r32(ctx + CTX_FPR + 8 * i + 4);
         c->f[i].u = v;
-        uint64_t p = ((uint64_t)mem_r32(ctx + CTX_PSF + 8 * i) << 32) | mem_r32(ctx + CTX_PSF + 8 * i + 4);
-        memcpy(&c->ps1[i], &p, 8);
+        // The SDK saves PSF with psq_st: each slot holds two binary32 values,
+        // not a binary64. The separate FPR slot above preserves the full PS0.
+        const uint32_t p = mem_r32(ctx + CTX_PSF + 8 * i + 4);
+        float ps1;
+        memcpy(&ps1, &p, sizeof ps1);
+        c->ps1[i] = (double)ps1;
     }
     c->fpscr = mem_r32(ctx + CTX_FPSCR);
     c->fprf_pending = 0;

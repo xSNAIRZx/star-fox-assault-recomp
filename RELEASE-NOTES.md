@@ -4,6 +4,9 @@
   paired-sum result flags and preserve copied lanes. Regression coverage includes
   a tiny-vector normalization failure mechanism. The recorded boss encounter is
   still the required gameplay gate; this is not a confirmed boss fix yet.
+- Restore the second packed single-precision PSF context lane correctly, while
+  keeping PS0's dedicated double-precision value. This is a tested context-reader
+  correction, not a verified fix for the reported pointer crash.
 
 - WASD movement with independent mouse Aim (C-stick), F9 capture/release and F10
   Flight steering. Captured Aim-mode left-click sends R for the game's Dual-Stick
