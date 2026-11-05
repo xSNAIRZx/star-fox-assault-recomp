@@ -1,3 +1,26 @@
+# Unreleased — 2026-11-05 launcher polish
+
+- Fix Systems & Controls crashing on open ("op_Subtraction") so no settings
+  appeared: two divider widths were parsed as `Width - (50,1)`.
+- The launcher is now DPI-aware, so text is sharp at 125%/150% display scaling
+  instead of a stretched 96-DPI bitmap. Pages, the sidebar and the build and
+  controller-mapping dialogs are laid out in 96-DPI units and scaled once.
+- Labels with "&" (Systems & Controls, Import & Build, Picture & Display, ...)
+  show it instead of a gap.
+- Every page fits the 1180×720 minimum window without a horizontal scrollbar;
+  Crash Reports and Mod Library fit without scrolling at all.
+- Empty lists say so (crash logs, backups, texture packs); the crash-log message
+  was hidden behind its list before. Disabled buttons stay readable.
+- Page headings sit on a dark band over the artwork; the Save Archive note moved
+  into its card; the home title no longer sits on solid black boxes.
+- Page titles match the sidebar names. The sidebar status box sits under its
+  heading and starts as "Ready".
+- Systems & Controls: Save is in the page header, edits show "Unsaved changes",
+  and leaving with unsaved edits asks to save, discard or stay. Notes sit under
+  the setting they describe; volume is a dark dropdown.
+- About shows the version from `release.json` and the current known limitations.
+- Scrollbars are still the light Windows default.
+
 # Unreleased — 2026-11-05 launcher build flow and settings
 
 - Import & Build first checks free disk space (3 GB), that the launcher folder is

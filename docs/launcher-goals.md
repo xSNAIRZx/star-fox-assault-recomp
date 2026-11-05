@@ -9,6 +9,7 @@ Tick items here as they land, in the same PR as the change.
 - **Done:** Tier 1 reliability fixes, heading-font fallback and a GitHub bug-report form ([PR #1](https://github.com/xSNAIRZx/star-fox-assault-recomp/pull/1)). CI now keeps the launcher exe, image inspector and host-check ZIP with SHA-256 as a 30-day workflow artifact ([PR #2](https://github.com/xSNAIRZx/star-fox-assault-recomp/pull/2)).
 - **Not yet verified on a desktop:** PR #1 passed hosted Windows CI (PowerShell 5.1 parse, 110-path launcher audit, update tests) but the launcher window itself has not been opened with these changes. Check before calling them verified: switch pages; install a local ZIP (window stays responsive); corrupt `settings.json` once (expect a status notice and a `settings.corrupt-*.json` copy); launch with a controls file in a path containing spaces.
 - **Also done, 2026-11-05:** build pre-flight, readable build failures, phase timing and download sizes (Tier 2), and the single settings schema in `tools/LauncherCore.ps1` with its tests (Tier 3). The launcher window starts with these changes; the pre-flight dialog, failure view and download text still need a desktop check with a real build.
+- **Also done, 2026-11-05 (polish):** fixed the Systems & Controls crash on open, DPI awareness with scaled layout, "&" in labels, minimum-size fit, empty states, readable disabled buttons, header bands, matching page names, Settings save/unsaved handling and refreshed About text. See RELEASE-NOTES.md.
 - **Next:** ship rc.4 (step 2 of the order below).
 - **Open decision:** keep the launcher UI in PowerShell or port it to C#. Decide before the Tier 3 module split.
 
@@ -18,7 +19,7 @@ One ~1,860-line PowerShell 5.1 + WinForms script behind a small C# bootstrap exe
 
 Already solid: atomic settings writes, build-to-image identity binding, SHA-256-pinned portable toolchain, cancellable build worker with a progress file, previous-exe retention, checksum-verified save restore, capped texture-pack import, the launcher path audit and package allowlists.
 
-Main weak spots: every control is placed with absolute pixel coordinates (DPI and small windows are fragile, and the window has never been checked at the 1180 px minimum width); switching pages disposes and rebuilds every control; the published rc.3 download predates current source.
+Main weak spots: every control is placed with absolute coordinates (now in 96-DPI units scaled to the display, checked at 125% and the 1180×720 minimum); switching pages disposes and rebuilds every control; scrollbars use the light Windows default; the published rc.3 download predates current source.
 
 ## Tier 1 — Correctness and reliability
 
@@ -38,7 +39,7 @@ Main weak spots: every control is placed with absolute pixel coordinates (DPI an
 - [x] Readable build failures: show the failing stage and first errors from the worker's `stdout.log`/`stderr.log`, with Open log, Copy report (paths redacted) and Open job folder buttons.
 - [x] Show elapsed time per phase and MB downloaded in the build dialog.
 - [ ] One-click controller binding ("press the button for A now") with a live test view, replacing detect → close → reload.
-- [ ] Visually verify every page at 100%, 125% and 150% scaling and at 1180×720.
+- [ ] Visually verify every page at 100%, 125% and 150% scaling and at 1180×720. Done at 125% for the default window and 1180×720 (2026-11-05); 100% and 150% are still unchecked.
 - [x] Fall back to Segoe UI Semibold when Bahnschrift is not installed.
 - [ ] Keyboard and controller navigation: focus rings, tab order, Enter/Esc on dialogs, D-pad/A/B.
 - [ ] Crash Reports: flag sessions whose `.err` has `[guard]`/`[vertcheck]`, summarise the line, offer a redacted bundle (no paths, saves or RAM) for an issue.
@@ -49,7 +50,7 @@ Main weak spots: every control is placed with absolute pixel coordinates (DPI an
 - [ ] Decide PowerShell vs C# for the launcher UI. C# (WinForms or WPF on .NET Framework 4.8) gives async/await, data binding, faster startup and a debugger; keep the build worker in PowerShell.
 - [ ] Split the script into modules: settings, native build/status, game launch, one file per page. Logic modules must not touch WinForms.
 - [ ] Unit-test the logic modules with Pester (settings round-trip and corruption, status branches, argument escaping, phase-to-percent mapping) and add them to `tools/Test-ReleaseHost.ps1`. Started: `tools/Test-LauncherCore.ps1` (plain PowerShell, since Windows PowerShell 5.1 ships Pester 3.4 and CI has 5.x) covers settings, escaping, phase mapping, pre-flight rules and failure reports and runs in host checks. Native status branches are not covered yet.
-- [ ] Replace absolute layout with `TableLayoutPanel`/`FlowLayoutPanel`, anchors and padding.
+- [ ] Replace absolute layout with `TableLayoutPanel`/`FlowLayoutPanel`, anchors and padding. Interim step landed: the process is DPI-aware and each page is laid out in 96-DPI units, then scaled once (`Set-UiScale`); pages still use absolute positions and are rebuilt on each switch.
 - [ ] Build each page once and refresh data, instead of disposing and rebuilding on every switch.
 - [ ] Replace the hidden `Track-Session.ps1` process with a `Process.Exited` handler or a session record written by the game.
 - [x] Define settings defaults and allowed values once, used by both the loader and `Get-NativeGraphicsArguments` (`$LauncherSettingSchema` in `tools/LauncherCore.ps1`; the Settings page reads its value lists from it too).

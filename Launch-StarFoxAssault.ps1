@@ -4,6 +4,17 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+# Declare DPI awareness before any window exists, so Windows renders text at the display's real
+# resolution instead of stretching a 96-DPI bitmap (which blurs everything at 125% and above).
+# Layout is written in 96-DPI units and scaled once per page by Set-UiScale.
+try {
+  Add-Type -Namespace PeregrineForge -Name Native -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+'@
+  [void][PeregrineForge.Native]::SetProcessDPIAware()
+} catch {}
+$script:uiScale = 1.0
+try { $dpiProbe = [Drawing.Graphics]::FromHwnd([IntPtr]::Zero); try { $script:uiScale = [Math]::Max(1.0,$dpiProbe.DpiX / 96.0) } finally { $dpiProbe.Dispose() } } catch {}
 [Windows.Forms.Application]::EnableVisualStyles()
 
 $script:projectDir = $PSScriptRoot
@@ -158,6 +169,8 @@ function Test-FilePath([string]$path) {
 }
 function New-Label([string]$text, [int]$size = 10, [bool]$bold = $false, $color = $null) {
   $l = New-Object Windows.Forms.Label
+  # Without this, '&' is taken as a keyboard-shortcut marker and disappears ("SYSTEMS  CONTROLS").
+  $l.UseMnemonic = $false
   $l.Text = $text
   $l.AutoSize = $true
   $fontSize = [Math]::Max(8,$size)
@@ -169,8 +182,23 @@ function New-Label([string]$text, [int]$size = 10, [bool]$bold = $false, $color 
 }
 function New-Button([string]$text, [int]$width = 150, [bool]$primary = $false) {
   $b = New-Object Windows.Forms.Button
+  $b.UseMnemonic = $false
   $b.Text = $text
   $b.TextAlign = 'MiddleCenter'
+  # WinForms draws disabled flat buttons with near-black text on this palette; repaint them so
+  # the label stays readable while still looking unavailable.
+  $b.Add_Paint({
+    param($sender,$e)
+    if ($sender.Enabled) { return }
+    $back = [Drawing.SolidBrush]::new($script:colors.panel)
+    $border = [Drawing.Pen]::new($script:colors.steelShade,1)
+    try {
+      $e.Graphics.FillRectangle($back,$sender.ClientRectangle)
+      $e.Graphics.DrawRectangle($border,0,0,$sender.Width - 1,$sender.Height - 1)
+      $flags = [Windows.Forms.TextFormatFlags]::HorizontalCenter -bor [Windows.Forms.TextFormatFlags]::VerticalCenter -bor [Windows.Forms.TextFormatFlags]::NoPrefix -bor [Windows.Forms.TextFormatFlags]::SingleLine
+      [Windows.Forms.TextRenderer]::DrawText($e.Graphics,$sender.Text,$sender.Font,$sender.ClientRectangle,$script:colors.line,$flags)
+    } finally { $back.Dispose(); $border.Dispose() }
+  })
   $b.Size = New-Object Drawing.Size($width, 40)
   $b.FlatStyle = 'Flat'
   $b.UseVisualStyleBackColor = $false
@@ -183,6 +211,12 @@ function New-Button([string]$text, [int]$width = 150, [bool]$primary = $false) {
   $b.Font = New-Object Drawing.Font($script:headingFontName, 10)
   $b.Cursor = [Windows.Forms.Cursors]::Hand
   return $b
+}
+# 96-DPI layout units to physical pixels, for code that runs after a page has been scaled.
+function Get-Px([double]$value) { return [int][Math]::Round($value * $script:uiScale) }
+# Scales a control tree built in 96-DPI units. Call once per tree, after it is fully built.
+function Set-UiScale($control) {
+  if ($script:uiScale -gt 1.0) { $control.Scale([Drawing.SizeF]::new([single]$script:uiScale,[single]$script:uiScale)) }
 }
 function New-Card([int]$x, [int]$y, [int]$w, [int]$h) {
   $p = New-Object Windows.Forms.Panel
@@ -219,7 +253,7 @@ function New-Card([int]$x, [int]$y, [int]$w, [int]$h) {
 function Set-DarkComboBox($combo) {
   $combo.DrawMode = [Windows.Forms.DrawMode]::OwnerDrawFixed
   $combo.FlatStyle = [Windows.Forms.FlatStyle]::Flat
-  $combo.ItemHeight = 22
+  $combo.ItemHeight = Get-Px 22
   $combo.BackColor = $script:colors.panel2
   $combo.ForeColor = $script:colors.text
   $panelColor = $script:colors.panel2
@@ -614,7 +648,7 @@ function Start-NativeBuild {
                 Phase = $failedPhase; Message = $reason; ExitCode = $exitCode
                 Elapsed = (Format-Elapsed ($now - $track.Start)); Errors = $errorLines; Tail = $tail
               } $replacements
-              $dialog.Size = New-Object Drawing.Size(700,460)
+              $dialog.Size = New-Object Drawing.Size((Get-Px 700),(Get-Px 460))
               $errorBox.Visible = $true; $openLog.Visible = $true; $copyReport.Visible = $true; $openJob.Visible = $true
             }
             $statusLabel.Text=('{0} · state {1}, exit {2}, output {3}' -f $message.Text,$phase,$exitCode,$nativeOutputExists); $statusLabel.ForeColor=$colors.muted
@@ -627,7 +661,7 @@ function Start-NativeBuild {
       }
     }.GetNewClosure())
     $dialog.Add_FormClosed({ if($timer){$timer.Stop();$timer.Dispose()}; if($buildState.Timer -eq $timer){$buildState.Timer=$null}; if($buildState.Dialog -eq $dialog){$buildState.Dialog=$null} }.GetNewClosure())
-    $timer.Start(); $dialog.Show($script:form) | Out-Null
+    Set-UiScale $dialog; $timer.Start(); $dialog.Show($script:form) | Out-Null
     Set-Status 'Building native game…' $true
   } catch { Set-Status $_.Exception.Message }
 }
@@ -775,11 +809,11 @@ function Open-ControlsFile {
   $dialog.Text = 'Controller mapping'
   $dialog.StartPosition = 'CenterParent'
   $dialog.ClientSize = New-Object Drawing.Size(960,610)
-  $dialog.MinimumSize = New-Object Drawing.Size(960,610)
+  # Minimum size is set after scaling, just before the dialog is shown.
   $dialog.BackColor = $script:colors.base
   $dialog.ForeColor = $script:colors.text
   $dialog.Font = New-Object Drawing.Font('Segoe UI',10)
-  $dialog.AutoScaleMode = 'Dpi'
+  $dialog.AutoScaleMode = 'None'
 
   $title = New-Label 'MAP YOUR CONTROLLER' 18 $true
   $title.Location = New-Object Drawing.Point(24,20); $dialog.Controls.Add($title)
@@ -870,6 +904,7 @@ function Open-ControlsFile {
     } catch { [Windows.Forms.MessageBox]::Show($_.Exception.Message,'Could not save mappings','OK','Error') | Out-Null }
   }.GetNewClosure())
 
+  Set-UiScale $dialog; $dialog.MinimumSize = $dialog.Size
   [void]$dialog.ShowDialog($script:form)
 }
 function Open-Folder([string]$path) {
@@ -881,10 +916,11 @@ $script:form = New-Object Windows.Forms.Form
 $script:form.Text = $script:windowTitle
 $script:form.StartPosition = 'Manual'
 $workArea = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-$initialWidth = [Math]::Min(1480,[Math]::Max(1100,$workArea.Width - 36))
-$initialHeight = [Math]::Min(900,[Math]::Max(680,$workArea.Height - 60))
+# The work area is in physical pixels; the design sizes below are 96-DPI units.
+$initialWidth = [Math]::Min((Get-Px 1480),[Math]::Max((Get-Px 1100),$workArea.Width - (Get-Px 36)))
+$initialHeight = [Math]::Min((Get-Px 900),[Math]::Max((Get-Px 680),$workArea.Height - (Get-Px 60)))
 $script:form.ClientSize = New-Object Drawing.Size($initialWidth,$initialHeight)
-$script:form.MinimumSize = New-Object Drawing.Size([Math]::Min(1180,$initialWidth),[Math]::Min(720,$initialHeight))
+$script:form.MinimumSize = New-Object Drawing.Size([Math]::Min((Get-Px 1180),$initialWidth),[Math]::Min((Get-Px 720),$initialHeight))
 $script:form.BackColor = $script:colors.base
 $script:formIcon = $null
 $script:iconPath = Join-Path $script:projectDir 'assets\assault-launcher.ico'
@@ -950,13 +986,14 @@ function Update-LauncherBackground {
 if ($script:backgroundImage) { Update-LauncherBackground }
 $script:form.ForeColor = $script:colors.text
 $script:form.Font = New-Object Drawing.Font('Segoe UI',10)
-$script:form.AutoScaleMode = 'Dpi'
+# Scaling is done explicitly with Set-UiScale, so WinForms must not auto-scale a second time.
+$script:form.AutoScaleMode = 'None'
 $script:form.Location = New-Object Drawing.Point(($workArea.Left + [Math]::Max(0,($workArea.Width - $initialWidth) / 2)),($workArea.Top + [Math]::Max(0,($workArea.Height - $initialHeight) / 2)))
 
 $script:sidebarWidth = 258
 $sidebar = New-Object Windows.Forms.Panel
 $script:sidebar = $sidebar
-$sidebar.Dock = 'None'; $sidebar.Location = New-Object Drawing.Point(0,0); $sidebar.Size = New-Object Drawing.Size($script:sidebarWidth,$script:form.ClientSize.Height)
+$sidebar.Dock = 'None'; $sidebar.Location = New-Object Drawing.Point(0,0); $sidebar.Size = New-Object Drawing.Size($script:sidebarWidth,[int]($script:form.ClientSize.Height / $script:uiScale))
 $sidebar.Anchor = 'Top,Bottom,Left'; $sidebar.BackColor = [Drawing.Color]::FromArgb(246,4,11,15)
 $sidebar.Add_Paint({
   param($sender,$e)
@@ -980,22 +1017,35 @@ $script:form.Controls.Add($sidebar)
   $brandMark.Add_Paint({
     param($sender,$e)
     $e.Graphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $e.Graphics.DrawString('PF',$script:brandFont,$script:brandBrush,5,5)
-    $e.Graphics.DrawLine($script:brandAccent,6,44,52,44)
-    $e.Graphics.DrawLine($script:brandAccent,16,49,43,49)
+    $s = $script:uiScale
+    $e.Graphics.DrawString('PF',$script:brandFont,$script:brandBrush,(5*$s),(5*$s))
+    $e.Graphics.DrawLine($script:brandAccent,(6*$s),(44*$s),(52*$s),(44*$s))
+    $e.Graphics.DrawLine($script:brandAccent,(16*$s),(49*$s),(43*$s),(49*$s))
   }.GetNewClosure())
   $sidebar.Controls.Add($brandMark); $script:brandMark = $brandMark
 
 $script:content = New-Object Windows.Forms.Panel
-$script:content.Dock = 'None'; $script:content.Location = New-Object Drawing.Point($script:sidebarWidth,0)
-$script:content.Size = New-Object Drawing.Size([Math]::Max(320,$script:form.ClientSize.Width-$script:sidebarWidth),$script:form.ClientSize.Height); $script:content.Anchor = 'Top,Bottom,Left,Right'
+$script:content.Dock = 'None'; $script:content.Location = New-Object Drawing.Point((Get-Px $script:sidebarWidth),0)
+$script:content.Size = New-Object Drawing.Size([Math]::Max(320,$script:form.ClientSize.Width-(Get-Px $script:sidebarWidth)),$script:form.ClientSize.Height); $script:content.Anchor = 'Top,Bottom,Left,Right'
 $script:content.BackColor = [Drawing.Color]::Transparent; $script:content.AutoScroll = $true
+# A dark band behind each page title, so headings stay readable over the bright hangar art.
+# Transparent labels repaint their parent, so they pick this band up too.
+$script:content.Add_Paint({
+  param($sender,$e)
+  if ($script:currentPage -eq 'Home') { return }
+  $top = $sender.AutoScrollPosition.Y
+  $band = [Drawing.Rectangle]::new(0,$top,$sender.ClientSize.Width,(Get-Px 104))
+  if ($band.Bottom -le 0 -or $band.Width -le 0) { return }
+  $brush = [Drawing.Drawing2D.LinearGradientBrush]::new($band,[Drawing.Color]::FromArgb(236,4,11,15),[Drawing.Color]::FromArgb(150,4,11,15),[Drawing.Drawing2D.LinearGradientMode]::Horizontal)
+  $brush.WrapMode = [Drawing.Drawing2D.WrapMode]::TileFlipXY
+  try { $e.Graphics.FillRectangle($brush,$band) } finally { $brush.Dispose() }
+})
 $script:form.Controls.Add($script:content)
 $script:form.Add_Resize({
   if ($script:form.WindowState -ne [Windows.Forms.FormWindowState]::Minimized) {
     $script:sidebar.Height = $script:form.ClientSize.Height
-    $script:content.Location = New-Object Drawing.Point($script:sidebarWidth,0)
-    $script:content.Size = New-Object Drawing.Size([Math]::Max(320,$script:form.ClientSize.Width - $script:sidebarWidth),[Math]::Max(100,$script:form.ClientSize.Height))
+    $script:content.Location = New-Object Drawing.Point($script:sidebar.Width,0)
+    $script:content.Size = New-Object Drawing.Size([Math]::Max(320,$script:form.ClientSize.Width - $script:sidebar.Width),[Math]::Max(100,$script:form.ClientSize.Height))
     Update-StatusLabelBounds
     if ($script:backgroundResizeTimer) { $script:backgroundResizeTimer.Stop(); $script:backgroundResizeTimer.Start() }
   }
@@ -1004,8 +1054,8 @@ $script:form.Add_Shown({
   # Rebuild after the first DPI pass so the overview uses the real client dimensions.
   $script:form.PerformLayout()
   $script:sidebar.Height = $script:form.ClientSize.Height
-  $script:content.Location = New-Object Drawing.Point($script:sidebarWidth,0)
-  $script:content.Size = New-Object Drawing.Size([Math]::Max(320,$script:form.ClientSize.Width - $script:sidebarWidth),[Math]::Max(100,$script:form.ClientSize.Height))
+  $script:content.Location = New-Object Drawing.Point($script:sidebar.Width,0)
+  $script:content.Size = New-Object Drawing.Size([Math]::Max(320,$script:form.ClientSize.Width - $script:sidebar.Width),[Math]::Max(100,$script:form.ClientSize.Height))
   Update-LauncherBackground
   Update-StatusLabelBounds
   $script:sidebar.BringToFront()
@@ -1031,9 +1081,10 @@ $script:form.Add_FormClosed({
   foreach ($resource in @($script:brandFont,$script:brandBrush,$script:brandAccent)) { if ($resource) { $resource.Dispose() } }
   $script:brandFont = $null; $script:brandBrush = $null; $script:brandAccent = $null
 })
-$railLabel=New-Label 'SYSTEM STATUS' 8 $true $script:colors.muted
-$railLabel.Location=New-Object Drawing.Point(20,548); $sidebar.Controls.Add($railLabel)
-$script:statusLabel = New-Label 'LOCAL PROJECT' 9 $true $script:colors.cyan
+$railLabel=New-Label 'STATUS' 8 $true $script:colors.muted
+$railLabel.Location=New-Object Drawing.Point(20,548); $sidebar.Controls.Add($railLabel); $script:railLabel = $railLabel
+$script:statusLabel = New-Label 'Ready' 9 $true $script:colors.cyan
+$script:statusLabel.UseMnemonic = $false
 $script:statusLabel.AutoSize = $false; $script:statusLabel.TextAlign = 'MiddleLeft'; $script:statusLabel.AutoEllipsis = $true
 $script:statusLabel.BackColor=$script:colors.panel; $script:statusLabel.Padding=New-Object Windows.Forms.Padding(10,0,6,0)
 $script:statusLabel.BorderStyle='FixedSingle'; $script:statusLabel.Size = New-Object Drawing.Size(220,38)
@@ -1041,12 +1092,15 @@ $sidebar.Controls.Add($script:statusLabel)
 $script:statusTip = New-Object Windows.Forms.ToolTip
 $script:statusTip.AutoPopDelay = 20000; $script:statusTip.InitialDelay = 400; $script:statusTip.ReshowDelay = 100
 # Status messages carry error details; the rail tooltip retains their full text when it clips.
+# Runs after the sidebar has been scaled, so it works in physical pixels. The heading sits
+# directly above the status box instead of floating halfway down the rail.
 function Update-StatusLabelBounds {
-  if (-not $script:statusLabel) { return }
-  $script:statusLabel.Location = [Drawing.Point]::new(18,[Math]::Max(570,$script:sidebar.Height - 62))
-  $script:statusLabel.Size = [Drawing.Size]::new(($script:sidebarWidth - 36),38)
+  if (-not $script:statusLabel -or -not $script:sidebarScaled) { return }
+  $boxTop = [Math]::Max((Get-Px 570),$script:sidebar.Height - (Get-Px 62))
+  $script:statusLabel.Location = [Drawing.Point]::new((Get-Px 18),$boxTop)
+  $script:statusLabel.Size = [Drawing.Size]::new(($script:sidebar.Width - (Get-Px 36)),(Get-Px 38))
+  if ($script:railLabel) { $script:railLabel.Location = [Drawing.Point]::new((Get-Px 20),$boxTop - (Get-Px 22)) }
 }
-Update-StatusLabelBounds
 
 $navItems = @(
   @{key='Home';label='FLIGHT DECK'},
@@ -1063,6 +1117,7 @@ $navSection.Location=New-Object Drawing.Point(21,112); $sidebar.Controls.Add($na
 $navY = 140
 foreach ($item in $navItems) {
   $b = New-Object Windows.Forms.Button
+  $b.UseMnemonic = $false
   $b.Text = $item.label; $b.Tag = $item.key; $b.Location = New-Object Drawing.Point(14,$navY)
   $b.Size = [Drawing.Size]::new(($script:sidebarWidth - 28),46); $b.FlatStyle = 'Flat'; $b.FlatAppearance.BorderSize = 0
   $b.TextAlign = 'MiddleLeft'; $b.Padding=New-Object Windows.Forms.Padding(14,0,4,0)
@@ -1072,13 +1127,24 @@ foreach ($item in $navItems) {
   $b.Add_Click({ Show-Page ([string]$this.Tag) })
   $sidebar.Controls.Add($b); $script:navButtons[$item.key] = $b; $navY += 52
 }
+Set-UiScale $sidebar
+$script:sidebarScaled = $true
+$sidebar.Height = $script:form.ClientSize.Height
 Update-StatusLabelBounds
 
 function Show-Page([string]$page) {
   if (-not $script:navButtons.ContainsKey($page)) { $page = 'Home' }
+  # Leaving Settings with edits that were not saved: offer to save, discard or stay.
+  if ($script:currentPage -eq 'Settings' -and $page -ne 'Settings' -and $script:settingsDirty) {
+    $answer = [Windows.Forms.MessageBox]::Show($script:form,'Save your changes to Systems & controls before leaving?','Unsaved settings','YesNoCancel','Question')
+    if ($answer -eq [Windows.Forms.DialogResult]::Cancel) { return }
+    if ($answer -eq [Windows.Forms.DialogResult]::Yes) { Save-SettingsPage }
+  }
+  $script:settingsDirty = $false
   $script:currentPage = $page
   $script:content.SuspendLayout()
   foreach ($c in @($script:content.Controls)) { $script:content.Controls.Remove($c); $c.Dispose() }
+  $script:content.AutoScrollPosition = [Drawing.Point]::new(0,0)
   foreach ($key in $script:navButtons.Keys) {
     $selected = ($key -eq $page)
     $script:navButtons[$key].BackColor = if ($selected) { $script:colors.selection } else { [Drawing.Color]::Transparent }
@@ -1098,32 +1164,47 @@ function Show-Page([string]$page) {
     'Settings' { Build-SettingsPage }
     'About' { Build-AboutPage }
   }
+  # Pages are laid out in 96-DPI units; scale each new top-level control once.
+  foreach ($c in @($script:content.Controls)) { Set-UiScale $c }
   $script:content.ResumeLayout()
+  $script:content.Invalidate()
 }
+# Page sizes in 96-DPI units, for the page builders.
+function Get-ContentLogicalWidth { [int]($script:content.ClientSize.Width / $script:uiScale) }
+function Get-ContentLogicalHeight { [int]($script:content.ClientSize.Height / $script:uiScale) }
 
 function Build-HomePage {
-  $pageWidth = [Math]::Max(880,$script:content.ClientSize.Width)
-  $pageHeight = [Math]::Max(640,$script:content.ClientSize.Height)
+  $pageWidth = [Math]::Max(880,(Get-ContentLogicalWidth))
+  $pageHeight = [Math]::Max(640,(Get-ContentLogicalHeight))
   $scene = New-Object Windows.Forms.Panel
   $scene.Location = New-Object Drawing.Point(0,0); $scene.Size = New-Object Drawing.Size($pageWidth,$pageHeight)
   $scene.Anchor = 'Top,Bottom,Left,Right'; $scene.BackColor = [Drawing.Color]::Transparent
   $scene.Add_Paint({
     param($sender,$e)
-    $w = $sender.ClientSize.Width; $h = $sender.ClientSize.Height
+    # Work in 96-DPI units and let the transform scale the drawing to the real pixels.
+    $s = [single]$script:uiScale
+    $e.Graphics.ScaleTransform($s,$s)
+    $w = [int]($sender.ClientSize.Width / $s); $h = [int]($sender.ClientSize.Height / $s)
     $left = [Drawing.Rectangle]::new(0,0,[Math]::Min(650,$w),$h)
     $leftBrush = New-Object Drawing.Drawing2D.LinearGradientBrush($left,[Drawing.Color]::FromArgb(218,4,11,15),[Drawing.Color]::FromArgb(0,4,11,15),[Drawing.Drawing2D.LinearGradientMode]::Horizontal)
+    # TileFlipXY stops GDI+ wrapping the far colour back onto the first row or column, which
+    # showed as a thin line once the drawing is scaled.
+    $leftBrush.WrapMode = [Drawing.Drawing2D.WrapMode]::TileFlipXY
     $e.Graphics.FillRectangle($leftBrush,$left); $leftBrush.Dispose()
     $titleY = [Math]::Max(176,[int]($h * 0.32))
     $titleField = [Drawing.Rectangle]::new(16,[Math]::Max(0,$titleY - 42),[Math]::Min(570,$w - 16),204)
     $titleBrush = [Drawing.Drawing2D.LinearGradientBrush]::new($titleField,[Drawing.Color]::FromArgb(196,4,11,15),[Drawing.Color]::FromArgb(18,4,11,15),[Drawing.Drawing2D.LinearGradientMode]::Horizontal)
+    $titleBrush.WrapMode = [Drawing.Drawing2D.WrapMode]::TileFlipXY
     $e.Graphics.FillRectangle($titleBrush,$titleField); $titleBrush.Dispose()
     $bottom = [Drawing.Rectangle]::new(0,[Math]::Max(0,$h-260),$w,[Math]::Min(260,$h))
     $bottomBrush = New-Object Drawing.Drawing2D.LinearGradientBrush($bottom,[Drawing.Color]::FromArgb(0,4,11,15),[Drawing.Color]::FromArgb(235,4,11,15),[Drawing.Drawing2D.LinearGradientMode]::Vertical)
+    $bottomBrush.WrapMode = [Drawing.Drawing2D.WrapMode]::TileFlipXY
     $e.Graphics.FillRectangle($bottomBrush,$bottom); $bottomBrush.Dispose()
     $rule = New-Object Drawing.Pen([Drawing.Color]::FromArgb(95,61,202,222),1)
     $e.Graphics.DrawLine($rule,36,88,[Math]::Min($w-36,450),88)
     $e.Graphics.DrawLine($rule,36,[Math]::Max(0,$h-224),[Math]::Min($w-36,660),[Math]::Max(0,$h-224))
     $rule.Dispose()
+    $e.Graphics.ResetTransform()
   })
   $script:content.Controls.Add($scene)
 
@@ -1131,18 +1212,18 @@ function Build-HomePage {
   $eyebrow.Location = New-Object Drawing.Point(38,35); $scene.Controls.Add($eyebrow)
   $titleY = [Math]::Max(176,[int]($pageHeight * 0.32))
   $eyebrowTitle=New-Label 'GAMECUBE RECOMPILATION' 9 $true $script:colors.muted
-  $eyebrowTitle.BackColor = $script:colors.base
+  $eyebrowTitle.BackColor = [Drawing.Color]::Transparent
   $eyebrowTitle.Location=New-Object Drawing.Point(40,($titleY-35)); $scene.Controls.Add($eyebrowTitle)
   $name = New-Label 'STAR FOX' 28 $true
-  $name.BackColor = $script:colors.base
+  $name.BackColor = [Drawing.Color]::Transparent
   if ($script:flightDisplayFontFamily) { $name.Font = [Drawing.Font]::new($script:flightDisplayFontFamily,28,[Drawing.FontStyle]::Bold) }
   $name.Location = New-Object Drawing.Point(35,$titleY); $scene.Controls.Add($name)
   $name2 = New-Label 'ASSAULT' 30 $true $script:colors.cyan
-  $name2.BackColor = $script:colors.base
+  $name2.BackColor = [Drawing.Color]::Transparent
   if ($script:flightDisplayFontFamily) { $name2.Font = [Drawing.Font]::new($script:flightDisplayFontFamily,30,[Drawing.FontStyle]::Bold) }
   $name2.Location = New-Object Drawing.Point(35,($titleY+47)); $scene.Controls.Add($name2)
   $validation=New-Label 'EXPERIMENTAL NATIVE BUILD  ·  GAMEPLAY VALIDATION IN PROGRESS' 9 $false $script:colors.muted
-  $validation.BackColor = $script:colors.base
+  $validation.BackColor = [Drawing.Color]::Transparent
   $validation.Location=New-Object Drawing.Point(40,($titleY+122)); $scene.Controls.Add($validation)
 
   $cardY=[Math]::Max(470,$pageHeight-206)
@@ -1183,11 +1264,17 @@ function Build-HomePage {
   $dolphinX = $pageWidth - 230; $dolphinY = $playY + 64
   $dolphin.Size = New-Object Drawing.Size(194,42); $dolphin.Location = New-Object Drawing.Point($dolphinX,$dolphinY)
   $dolphin.Anchor = 'Bottom,Right'; $dolphin.Add_Click({ Start-DolphinGame }); $dolphin.Visible = (Test-FilePath $script:dolphinValue); $scene.Controls.Add($dolphin)
-  $quick = New-Label 'SPACE CONTINUE  /  F9 MOUSE' 8 $true $script:colors.cyan
-  $quick.Location=New-Object Drawing.Point($playX,($cardY-35)); $quick.Anchor='Bottom,Right'; $scene.Controls.Add($quick)
+  $quick = New-Label 'IN GAME  ·  SPACE CONTINUE  /  F9 MOUSE CAPTURE' 8 $true $script:colors.cyan
+  # A translucent backing keeps the hint readable where it crosses the bright ship.
+  $quick.BackColor = [Drawing.Color]::FromArgb(200,4,11,15); $quick.Padding = New-Object Windows.Forms.Padding(6,3,6,3)
+  # Right-aligned with the buttons. PreferredWidth is measured in physical pixels.
+  $quickWidth = [int][Math]::Ceiling($quick.PreferredWidth / $script:uiScale)
+  $quick.Location=New-Object Drawing.Point(($playX + 194 - $quickWidth),($cardY-35)); $quick.Anchor='Bottom,Right'; $scene.Controls.Add($quick)
 }
 
-function Get-ContentPageWidth { [Math]::Max(880,$script:content.ClientSize.Width - 60) }
+# Card width in 96-DPI units. The floor fits the 1180-wide minimum window without a horizontal
+# scrollbar (content is 922 wide there: 30 left margin + 820 + room for a vertical scrollbar).
+function Get-ContentPageWidth { [Math]::Max(820,(Get-ContentLogicalWidth) - 60) }
 
 function Refresh-CrashLogs($list) {
   $list.Items.Clear()
@@ -1207,18 +1294,24 @@ function Refresh-CrashLogs($list) {
 function Build-CrashesPage {
   Add-SectionHeader $script:content 'Crash reports' 'Inspect native runtime logs saved in this project''s isolated run folder.'
   $pageWidth = Get-ContentPageWidth
-  $card = New-Card 30 112 $pageWidth 650
+  # Fill the window height (down to a usable minimum) instead of a fixed 650, so the page
+  # fits the minimum window without scrolling. The list, log and buttons follow the card.
+  $cardHeight = [Math]::Max(420,[Math]::Min(650,(Get-ContentLogicalHeight) - 136))
+  $card = New-Card 30 112 $pageWidth $cardHeight
   $list = New-Object Windows.Forms.ListBox
-  $list.Location = New-Object Drawing.Point(24,24); $list.Size = New-Object Drawing.Size(340,540)
+  $list.Location = New-Object Drawing.Point(24,24); $list.Size = New-Object Drawing.Size(340,($cardHeight - 110))
   $list.BackColor = $script:colors.panel2; $list.ForeColor = $script:colors.text; $list.BorderStyle = 'FixedSingle'
   $list.Anchor = 'Top,Bottom,Left'; $card.Controls.Add($list)
   $script:crashEmptyLabel = New-Label 'No crash logs yet' 10 $true $script:colors.muted
   $script:crashEmptyLabel.AutoSize = $false; $script:crashEmptyLabel.TextAlign = 'MiddleCenter'
-  $script:crashEmptyLabel.Location = New-Object Drawing.Point(24,220); $script:crashEmptyLabel.Size = New-Object Drawing.Size(340,38); $card.Controls.Add($script:crashEmptyLabel)
+  $script:crashEmptyLabel.BackColor = $script:colors.panel2
+  $script:crashEmptyLabel.Location = New-Object Drawing.Point(25,220); $script:crashEmptyLabel.Size = New-Object Drawing.Size(338,38); $card.Controls.Add($script:crashEmptyLabel)
+  # Controls added later sit behind earlier ones; the message must sit above the list.
+  $script:crashEmptyLabel.BringToFront()
   $detail = New-Object Windows.Forms.TextBox
   $detailWidth = [Math]::Max(300,$pageWidth - 430)
-  $detail.Location = New-Object Drawing.Point(382,24); $detail.Size = New-Object Drawing.Size($detailWidth,540)
-  $detail.Multiline = $true; $detail.ReadOnly = $true; $detail.WordWrap = $true; $detail.ScrollBars = 'Vertical'; $detail.BorderStyle = 'None'
+  $detail.Location = New-Object Drawing.Point(382,24); $detail.Size = New-Object Drawing.Size($detailWidth,($cardHeight - 110))
+  $detail.Multiline = $true; $detail.ReadOnly = $true; $detail.WordWrap = $true; $detail.ScrollBars = 'None'; $detail.BorderStyle = 'None'
   $detail.BackColor = $script:colors.base; $detail.ForeColor = $script:colors.text
   $detail.Font = New-Object Drawing.Font('Consolas',9); $detail.Anchor = 'Top,Bottom,Left,Right'; $card.Controls.Add($detail)
   $script:crashLogList = $list; $script:crashLogDetail = $detail
@@ -1226,6 +1319,7 @@ function Build-CrashesPage {
     if ($script:crashLogList.SelectedIndex -ge 0 -and $script:crashLogList.SelectedIndex -lt $script:crashLogPaths.Count) {
       try {
         $selectedLog = $script:crashLogPaths[$script:crashLogList.SelectedIndex]
+        $script:crashLogDetail.ScrollBars = 'Vertical'
         $script:crashLogDetail.Text = Get-Content -LiteralPath $selectedLog -Raw -ErrorAction Stop
         $ramDump = [IO.Path]::ChangeExtension($selectedLog,'.ram.bin')
         if (Test-Path -LiteralPath $ramDump -PathType Leaf) {
@@ -1236,15 +1330,15 @@ function Build-CrashesPage {
     }
   })
   Refresh-CrashLogs $list
-  $refresh = New-Button 'REFRESH' 110; $refresh.Location = New-Object Drawing.Point(24,584)
+  $refresh = New-Button 'REFRESH' 110; $refresh.Location = New-Object Drawing.Point(24,($cardHeight - 66))
   $refresh.Add_Click({ Refresh-CrashLogs $script:crashLogList }); $card.Controls.Add($refresh)
-  $open = New-Button 'OPEN LOG FOLDER' 155; $open.Location = New-Object Drawing.Point(145,584)
+  $open = New-Button 'OPEN LOG FOLDER' 155; $open.Location = New-Object Drawing.Point(145,($cardHeight - 66))
   $open.Add_Click({ Open-Folder $script:nativeRunDir }); $card.Controls.Add($open)
   $script:content.Controls.Add($card)
 }
 
 function Build-LibraryPage {
-  Add-SectionHeader $script:content 'Your game' 'Choose and inspect your own USA game image. The image is only read, never modified.'
+  Add-SectionHeader $script:content 'Game library' 'Choose and inspect your own USA game image. The image is only read, never modified.'
   $pageWidth = Get-ContentPageWidth
   $card = New-Card 30 110 $pageWidth 230
   $label = New-Label 'STAR FOX ASSAULT' 20 $true; $label.Location = New-Object Drawing.Point(24,24); $card.Controls.Add($label)
@@ -1411,11 +1505,14 @@ function Refresh-Backups($list) {
 }
 
 function Build-SavesPage {
-  Add-SectionHeader $script:content 'Save backups' 'Label and tag snapshots of the native runtime memory card. Backups are blocked while the game is running.'
+  Add-SectionHeader $script:content 'Save archive' 'Label and tag snapshots of the native runtime memory card. Backups are blocked while the game is running.'
   $pageWidth = Get-ContentPageWidth
   $card = New-Card 30 112 $pageWidth 485
   $pathLabel = New-Label 'ACTIVE MEMORY CARD' 9 $true $script:colors.cyan; $pathLabel.Location = New-Object Drawing.Point(24,18); $card.Controls.Add($pathLabel)
-  $p = New-Label $script:memcardPath 8 $false $script:colors.muted; $p.AutoSize=$false; $p.AutoEllipsis=$true
+  # Shown relative to the launcher folder; the tooltip keeps the full path.
+  $memcardShown = $script:memcardPath
+  if ($memcardShown.StartsWith($script:projectDir.TrimEnd('\') + '\',[StringComparison]::OrdinalIgnoreCase)) { $memcardShown = 'Launcher folder\' + $memcardShown.Substring($script:projectDir.TrimEnd('\').Length + 1) }
+  $p = New-Label $memcardShown 8 $false $script:colors.muted; $p.AutoSize=$false; $p.AutoEllipsis=$true
   $p.Location = New-Object Drawing.Point(25,42); $p.Size=New-Object Drawing.Size(($card.Width - 50),20); $card.Controls.Add($p)
   $script:savePathToolTip = New-Object Windows.Forms.ToolTip; $script:savePathToolTip.SetToolTip($p,$script:memcardPath)
 
@@ -1426,9 +1523,11 @@ function Build-SavesPage {
   $script:backupList.HorizontalScrollbar=$true; $script:backupList.Anchor='Top,Left,Bottom'; $card.Controls.Add($script:backupList)
   $script:backupEmptyLabel=New-Label 'No backups yet' 10 $true $script:colors.muted
   $script:backupEmptyLabel.AutoSize=$false; $script:backupEmptyLabel.TextAlign='MiddleCenter'
-  $script:backupEmptyLabel.Location=New-Object Drawing.Point(25,198); $script:backupEmptyLabel.Size=New-Object Drawing.Size(420,38); $card.Controls.Add($script:backupEmptyLabel)
+  $script:backupEmptyLabel.BackColor=$script:colors.panel2
+  $script:backupEmptyLabel.Location=New-Object Drawing.Point(26,198); $script:backupEmptyLabel.Size=New-Object Drawing.Size(418,38); $card.Controls.Add($script:backupEmptyLabel)
+  $script:backupEmptyLabel.BringToFront()
 
-  $detailPanel = New-Card 465 75 ([Math]::Max(360,$pageWidth-490)) 300; $card.Controls.Add($detailPanel)
+  $detailPanel = New-Card 465 75 ([Math]::Max(300,$pageWidth-490)) 300; $card.Controls.Add($detailPanel)
   $detailTitle = New-Label 'SELECTED BACKUP' 8 $true $script:colors.cyan; $detailTitle.Location=New-Object Drawing.Point(18,16); $detailPanel.Controls.Add($detailTitle)
   $labelCaption = New-Label 'DISPLAY LABEL' 8 $true $script:colors.muted; $labelCaption.Location=New-Object Drawing.Point(18,47); $detailPanel.Controls.Add($labelCaption)
   $script:backupLabelBox=New-Object Windows.Forms.TextBox; $script:backupLabelBox.Location=New-Object Drawing.Point(18,68); $script:backupLabelBox.Size=New-Object Drawing.Size(($detailPanel.Width - 36),28)
@@ -1510,9 +1609,10 @@ function Build-SavesPage {
 
   $script:backupList.Add_SelectedIndexChanged({ Update-BackupDetails })
   Refresh-Backups $script:backupList
+  # Inside the card, so it is not printed straight onto the artwork.
+  $note=New-Label 'Labels and tags are stored beside each snapshot. The native runtime uses a 4 Mbit (524,288-byte) card; backups of any other size cannot be restored.' 8 $false $script:colors.muted
+  $note.Location=New-Object Drawing.Point(26,455); $note.MaximumSize=New-Object Drawing.Size(($pageWidth-52),0); $card.Controls.Add($note)
   $script:content.Controls.Add($card)
-  $note=New-Label 'Backup metadata is stored beside each snapshot. The native runtime uses a 4 Mbit, 524,288-byte card; mismatched backups cannot be restored.' 9 $false $script:colors.muted
-  $note.Location=New-Object Drawing.Point(36,612); $script:content.Controls.Add($note)
 }
 
 function Refresh-Mods($list) {
@@ -1715,12 +1815,14 @@ function Restore-PreviousNativeModPack {
 function Build-ModsPage {
   Add-SectionHeader $script:content 'Mod library' 'Import and manage local Dolphin texture packs in this launcher''s isolated profile.'
   $pageWidth = Get-ContentPageWidth
-  $card=New-Card 30 112 $pageWidth 370
+  $card=New-Card 30 112 $pageWidth 330
   $list=New-Object Windows.Forms.ListBox; $list.Location=New-Object Drawing.Point(25,25); $list.Size=New-Object Drawing.Size(($pageWidth - 50),220)
   $list.BackColor=$script:colors.panel2; $list.ForeColor=$script:colors.text; $list.BorderStyle='FixedSingle'; $list.Anchor='Top,Left,Right'; $card.Controls.Add($list)
   $script:modsEmptyLabel=New-Label 'No Dolphin texture packs installed' 10 $true $script:colors.muted
   $script:modsEmptyLabel.AutoSize=$false; $script:modsEmptyLabel.TextAlign='MiddleCenter'
-  $script:modsEmptyLabel.Location=New-Object Drawing.Point(25,104); $script:modsEmptyLabel.Size=New-Object Drawing.Size(($pageWidth - 50),36); $card.Controls.Add($script:modsEmptyLabel)
+  $script:modsEmptyLabel.BackColor=$script:colors.panel2; $script:modsEmptyLabel.Anchor='Top,Left,Right'
+  $script:modsEmptyLabel.Location=New-Object Drawing.Point(26,104); $script:modsEmptyLabel.Size=New-Object Drawing.Size(($pageWidth - 52),36); $card.Controls.Add($script:modsEmptyLabel)
+  $script:modsEmptyLabel.BringToFront()
   Refresh-Mods $list; $script:modsList=$list
   $install=New-Button 'INSTALL ZIP PACK' 162 $true; $install.Location=New-Object Drawing.Point(25,265)
   $install.Add_Click({
@@ -1736,141 +1838,144 @@ function Build-ModsPage {
   }); $card.Controls.Add($remove)
   $folder=New-Button 'OPEN MOD FOLDER' 160; $folder.Location=New-Object Drawing.Point(377,265); $folder.Add_Click({ Open-Folder $script:modsDir }); $card.Controls.Add($folder)
   $script:content.Controls.Add($card)
-  $nativeCard=New-Card 30 500 $pageWidth 188
+  $nativeCard=New-Card 30 462 $pageWidth 200
   $n=New-Label 'NATIVE ASSET REPLACEMENTS' 9 $true $script:colors.cyan; $n.Location=New-Object Drawing.Point(22,17); $nativeCard.Controls.Add($n)
   $nd=New-Label 'Exact-size files at matching disc paths only. Executable files, RELs, DOLs, and sys/ are not supported. Dolphin texture packs do not apply to the native build.' 9 $false $script:colors.muted
   $nd.Location=New-Object Drawing.Point(22,42); $nd.MaximumSize=New-Object Drawing.Size(($pageWidth - 48),0); $nativeCard.Controls.Add($nd)
-  $nativeCheck=New-Object Windows.Forms.CheckBox; $nativeCheck.Text='Enable native asset replacements'; $nativeCheck.AutoSize=$true; $nativeCheck.Location=New-Object Drawing.Point(22,76); $nativeCheck.ForeColor=$script:colors.text; $nativeCheck.BackColor=[Drawing.Color]::Transparent; $nativeCheck.Checked=[bool]$script:nativeModsValue
+  $nativeCheck=New-Object Windows.Forms.CheckBox; $nativeCheck.Text='Enable native asset replacements'; $nativeCheck.AutoSize=$true; $nativeCheck.Location=New-Object Drawing.Point(22,88); $nativeCheck.ForeColor=$script:colors.text; $nativeCheck.BackColor=[Drawing.Color]::Transparent; $nativeCheck.Checked=[bool]$script:nativeModsValue
   $nativeCheck.Add_CheckedChanged({ $script:nativeModsValue=[bool]$script:nativeModsCheck.Checked; Save-Settings; if($script:nativeModsValue -and -not(Test-Path -LiteralPath $script:nativeModsDir -PathType Container)){ Set-Status 'Import a native asset ZIP before starting with replacements enabled.' } else { Set-Status 'Native replacement setting saved.' $true } }); $nativeCard.Controls.Add($nativeCheck); $script:nativeModsCheck=$nativeCheck
-  $importNative=New-Button 'IMPORT NATIVE ZIP' 170 $true; $importNative.Location=New-Object Drawing.Point(22,112)
+  $importNative=New-Button 'IMPORT NATIVE ZIP' 170 $true; $importNative.Location=New-Object Drawing.Point(22,126)
   $importNative.Add_Click({ $d=New-Object Windows.Forms.OpenFileDialog; $d.Filter='Native asset pack (*.zip)|*.zip'; if($d.ShowDialog() -eq 'OK'){ try { $meta=Install-NativeModPack $d.FileName; Save-Settings; Set-Status ('Installed {0}: {1} exact-size disc asset(s). Previous pack retained for rollback.' -f $meta.name,$meta.files) $true } catch { Set-Status $_.Exception.Message } } }); $nativeCard.Controls.Add($importNative)
-  $openNative=New-Button 'OPEN ACTIVE FOLDER' 170; $openNative.Location=New-Object Drawing.Point(205,112); $openNative.Add_Click({ [IO.Directory]::CreateDirectory($script:nativeModsDir) | Out-Null; Open-Folder $script:nativeModsDir }); $nativeCard.Controls.Add($openNative)
-  $rollback=New-Button 'ROLL BACK' 130; $rollback.Location=New-Object Drawing.Point(388,112); $rollback.Add_Click({ try { Restore-PreviousNativeModPack; Set-Status 'Previous native pack restored. The replaced pack was retained for rollback.' $true } catch { Set-Status $_.Exception.Message } }); $nativeCard.Controls.Add($rollback)
+  $openNative=New-Button 'OPEN ACTIVE FOLDER' 170; $openNative.Location=New-Object Drawing.Point(205,126); $openNative.Add_Click({ [IO.Directory]::CreateDirectory($script:nativeModsDir) | Out-Null; Open-Folder $script:nativeModsDir }); $nativeCard.Controls.Add($openNative)
+  $rollback=New-Button 'ROLL BACK' 130; $rollback.Location=New-Object Drawing.Point(388,126); $rollback.Add_Click({ try { Restore-PreviousNativeModPack; Set-Status 'Previous native pack restored. The replaced pack was retained for rollback.' $true } catch { Set-Status $_.Exception.Message } }); $nativeCard.Controls.Add($rollback)
   $metaPath=Join-Path (Join-Path (Split-Path -Parent $script:nativeModsDir) 'metadata') 'active.json'
   $nativeState=if(Test-Path -LiteralPath $metaPath){ try { $m=Get-Content -LiteralPath $metaPath -Raw | ConvertFrom-Json; 'ACTIVE: {0} · {1} files' -f $m.name,$m.files } catch { 'Active folder present; pack details unavailable.' } } else { 'No native replacement pack installed.' }
-  $stateLabel=New-Label $nativeState 8 $false $script:colors.muted; $stateLabel.Location=New-Object Drawing.Point(538,122); $nativeCard.Controls.Add($stateLabel)
+  $stateLabel=New-Label $nativeState 8 $false $script:colors.muted; $stateLabel.Location=New-Object Drawing.Point(538,137); $nativeCard.Controls.Add($stateLabel)
   $script:content.Controls.Add($nativeCard)
 }
 
+# Reads every Settings control into the profile and saves it.
+function Save-SettingsPage {
+  if (-not $script:settings_disc -or $script:settings_disc.IsDisposed) { return }
+  $script:discValue=$script:settings_disc.Text; $script:dolphinValue=$script:settings_dolphin.Text; $script:controlsValue=$script:settings_controls.Text
+  $script:scaleValue=[double](Get-LauncherSettingAllowed 'scale')[$script:scaleBox.SelectedIndex]
+  $script:aspectValue=(Get-LauncherSettingAllowed 'aspect')[$script:aspectBox.SelectedIndex]
+  $script:aaValue=(Get-LauncherSettingAllowed 'aa')[$script:aaBox.SelectedIndex]
+  $script:filterValue=(Get-LauncherSettingAllowed 'filter')[$script:filterBox.SelectedIndex]
+  $script:deadzoneValue=(Get-LauncherSettingAllowed 'deadzone')[$script:deadzoneBox.SelectedIndex]
+  $script:volumeValue=[int]$script:volumeOptions[$script:volumeBox.SelectedIndex]
+  $script:muteValue=$script:muteBox.Checked; $script:logValue=$script:logBox.Checked
+  $script:fullscreenValue=$script:fullscreenBox.Checked; $script:vsyncValue=$script:vsyncBox.Checked
+  Save-Settings
+  Set-SettingsDirty $false
+  Set-Status 'Settings saved.' $true
+}
+function Set-SettingsDirty([bool]$dirty) {
+  $script:settingsDirty = $dirty
+  if ($script:settingsDirtyLabel -and -not $script:settingsDirtyLabel.IsDisposed) { $script:settingsDirtyLabel.Visible = $dirty }
+}
 function Build-SettingsPage {
-  Add-SectionHeader $script:content 'Settings' 'Choose your game, controls and native options. Changes apply on the next launch.'
-  $card=New-Card 30 112 (Get-ContentPageWidth) 742
+  Add-SectionHeader $script:content 'Systems & controls' 'Choose your game, controls and native options. Changes apply on the next launch.'
+  $pageWidth = Get-ContentPageWidth
+  # Save sits in the header, so it is reachable without scrolling to the end of the page.
+  $save=New-Button 'SAVE SETTINGS' 160 $true; $save.Location=New-Object Drawing.Point((30 + $pageWidth - 160),44)
+  $save.Add_Click({ Save-SettingsPage }); $script:content.Controls.Add($save)
+  $script:settingsDirtyLabel=New-Label 'UNSAVED CHANGES' 8 $true $script:colors.cyan
+  $script:settingsDirtyLabel.AutoSize=$false; $script:settingsDirtyLabel.TextAlign='MiddleRight'
+  $script:settingsDirtyLabel.Location=New-Object Drawing.Point((30 + $pageWidth - 360),44); $script:settingsDirtyLabel.Size=New-Object Drawing.Size(188,40)
+  $script:settingsDirtyLabel.Visible=$false; $script:content.Controls.Add($script:settingsDirtyLabel)
+
+  $card=New-Card 30 112 $pageWidth 730
   $script:discValue=$script:settings.disc; $script:dolphinValue=$script:settings.dolphin; $script:controlsValue=$script:settings.controls
   $rows=@(
     @{label='GAME IMAGE';value=$script:discValue;id='disc'},
-    @{label='DOLPHIN APP';value=$script:dolphinValue;id='dolphin'},
+    @{label='DOLPHIN APP (OPTIONAL)';value=$script:dolphinValue;id='dolphin'},
     @{label='CONTROLS FILE (OPTIONAL)';value=$script:controlsValue;id='controls'}
   )
   $y=25
   foreach ($row in $rows) {
     $l=New-Label $row.label 8 $true $script:colors.muted; $l.Location=New-Object Drawing.Point(24,$y); $card.Controls.Add($l)
-    $textY = $y + 24
-    $browseY = $y + 20
-    $browseX=$card.Width - 128
-    $t=New-Object Windows.Forms.TextBox; $t.Text=$row.value; $t.Location=New-Object Drawing.Point(25,$textY); $t.Size=New-Object Drawing.Size(($browseX - 40),28)
+    $browseX=$card.Width - 130
+    $t=New-Object Windows.Forms.TextBox; $t.Text=$row.value; $t.Location=New-Object Drawing.Point(25,($y + 24)); $t.Size=New-Object Drawing.Size(($browseX - 40),28)
     $t.BackColor=$script:colors.panel2; $t.ForeColor=$script:colors.text; $t.BorderStyle='FixedSingle'; $t.Anchor='Top,Left,Right'; $card.Controls.Add($t)
-    $b=New-Button 'BROWSE' 105; $b.Location=New-Object Drawing.Point($browseX,$browseY); $b.Anchor='Top,Right'
+    $b=New-Button 'BROWSE' 105; $b.Location=New-Object Drawing.Point($browseX,($y + 18)); $b.Anchor='Top,Right'
     $id=$row.id
     $b.Add_Click({
       $d=New-Object Windows.Forms.OpenFileDialog
       if ($id -eq 'disc') { $d.Filter='Supported game images (*.iso;*.ciso)|*.iso;*.ciso|All files (*.*)|*.*' }
       elseif ($id -eq 'dolphin') { $d.Filter='Dolphin executable (Dolphin.exe)|Dolphin.exe|Executable (*.exe)|*.exe' }
       else { $d.Filter='Controller mappings (controls.txt)|controls.txt|Text files (*.txt)|*.txt|All files (*.*)|*.*' }
-      if ($d.ShowDialog() -eq 'OK') { $t.Text=$d.FileName }
+      if ($d.ShowDialog($script:form) -eq 'OK') { $t.Text=$d.FileName }
     }.GetNewClosure())
     $card.Controls.Add($b)
     Set-Variable -Scope Script -Name ("settings_{0}" -f $row.id) -Value $t
-    $y += 82
+    $y += 78
   }
   $columnGap=18; $columnWidth=[int][Math]::Floor(($card.Width - 50 - (2*$columnGap))/3)
   $columnX=@(25,(25+$columnWidth+$columnGap),(25+2*($columnWidth+$columnGap)))
-  $displayHeading=New-Label 'PICTURE & DISPLAY' 11 $true $script:colors.cyan; $displayHeading.Location=New-Object Drawing.Point(25,257); $card.Controls.Add($displayHeading)
-  $scaleLabel=New-Label 'INTERNAL RESOLUTION' 8 $true $script:colors.muted; $scaleLabel.Location=New-Object Drawing.Point($columnX[0],282); $card.Controls.Add($scaleLabel)
-  $script:scaleBox=New-Object Windows.Forms.ComboBox; $script:scaleBox.DropDownStyle='DropDownList'
-  $script:scaleBox.Items.AddRange([object[]]@('Auto / match window','1x','1.5x','2x','3x','4x','6x'))
-  $scaleValues=[double[]](Get-LauncherSettingAllowed 'scale')
-  $script:scaleBox.SelectedIndex=[Array]::IndexOf($scaleValues,[double]$script:scaleValue); if($script:scaleBox.SelectedIndex -lt 0){$script:scaleBox.SelectedIndex=3}
-  $script:scaleBox.Location=New-Object Drawing.Point($columnX[0],306); $script:scaleBox.Size=New-Object Drawing.Size($columnWidth,30)
-  Set-DarkComboBox $script:scaleBox; $card.Controls.Add($script:scaleBox)
-  $aspectLabel=New-Label 'ASPECT RATIO' 8 $true $script:colors.muted; $aspectLabel.Location=New-Object Drawing.Point($columnX[1],282); $card.Controls.Add($aspectLabel)
-  $script:aspectBox=New-Object Windows.Forms.ComboBox; $script:aspectBox.DropDownStyle='DropDownList'
-  $script:aspectBox.Items.AddRange([object[]]@('Original 4:3','Widescreen 16:9 (experimental)','Fill window (stretch)'))
-  $aspectValues=Get-LauncherSettingAllowed 'aspect'; $script:aspectBox.SelectedIndex=[Array]::IndexOf($aspectValues,$script:aspectValue); if($script:aspectBox.SelectedIndex -lt 0){$script:aspectBox.SelectedIndex=0}
-  $script:aspectBox.Location=New-Object Drawing.Point($columnX[1],306); $script:aspectBox.Size=New-Object Drawing.Size($columnWidth,30)
-  Set-DarkComboBox $script:aspectBox; $card.Controls.Add($script:aspectBox)
-  $aaLabel=New-Label 'ANTI-ALIASING' 8 $true $script:colors.muted; $aaLabel.Location=New-Object Drawing.Point($columnX[2],282); $card.Controls.Add($aaLabel)
-  $script:aaBox=New-Object Windows.Forms.ComboBox; $script:aaBox.DropDownStyle='DropDownList'; $script:aaBox.Items.AddRange([object[]]@('Off','FXAA'))
-  $script:aaBox.SelectedIndex=[Array]::IndexOf((Get-LauncherSettingAllowed 'aa'),$script:aaValue); if($script:aaBox.SelectedIndex -lt 0){$script:aaBox.SelectedIndex=0}
-  $script:aaBox.Location=New-Object Drawing.Point($columnX[2],306); $script:aaBox.Size=New-Object Drawing.Size($columnWidth,30)
-  Set-DarkComboBox $script:aaBox; $card.Controls.Add($script:aaBox)
-  $filterLabel=New-Label 'OUTPUT FILTER' 8 $true $script:colors.muted; $filterLabel.Location=New-Object Drawing.Point($columnX[0],351); $card.Controls.Add($filterLabel)
-  $script:filterBox=New-Object Windows.Forms.ComboBox; $script:filterBox.DropDownStyle='DropDownList'
-  $script:filterBox.Items.AddRange([object[]]@('Sharp (bicubic)','Smooth (bilinear)'))
-  $script:filterBox.SelectedIndex=[Array]::IndexOf((Get-LauncherSettingAllowed 'filter'),$script:filterValue); if($script:filterBox.SelectedIndex -lt 0){$script:filterBox.SelectedIndex=0}
-  $script:filterBox.Location=New-Object Drawing.Point($columnX[0],375); $script:filterBox.Size=New-Object Drawing.Size($columnWidth,30)
-  Set-DarkComboBox $script:filterBox; $card.Controls.Add($script:filterBox)
-  $dzLabel=New-Label 'STICK DEADZONE' 8 $true $script:colors.muted; $dzLabel.Location=New-Object Drawing.Point($columnX[1],351); $card.Controls.Add($dzLabel)
-  $script:deadzoneBox=New-Object Windows.Forms.ComboBox; $script:deadzoneBox.DropDownStyle='DropDownList'
-  $script:deadzoneBox.Items.AddRange([object[]]@('Runtime default','Off (0%)','5%','10%','15%','20%','30%'))
-  $dzValues=Get-LauncherSettingAllowed 'deadzone'; $script:deadzoneBox.SelectedIndex=[Array]::IndexOf($dzValues,$script:deadzoneValue); if($script:deadzoneBox.SelectedIndex -lt 0){$script:deadzoneBox.SelectedIndex=0}
-  $script:deadzoneBox.Location=New-Object Drawing.Point($columnX[1],375); $script:deadzoneBox.Size=New-Object Drawing.Size($columnWidth,30)
-  Set-DarkComboBox $script:deadzoneBox; $card.Controls.Add($script:deadzoneBox)
-  $dzNote=New-Label 'Optional steering precision.' 8 $false $script:colors.muted; $dzNote.AutoSize=$false; $dzNote.Size=New-Object Drawing.Size($columnWidth,24); $dzNote.Location=New-Object Drawing.Point($columnX[1],409); $card.Controls.Add($dzNote)
-  $volumeLabel=New-Label 'MASTER VOLUME (%)' 8 $true $script:colors.muted; $volumeLabel.Location=New-Object Drawing.Point($columnX[2],351); $card.Controls.Add($volumeLabel)
-  $script:volumeBox=New-Object Windows.Forms.NumericUpDown
-  $script:volumeBox.Minimum=0; $script:volumeBox.Maximum=100; $script:volumeBox.Increment=5
-  $script:volumeBox.Value=$script:volumeValue; $script:volumeBox.Location=New-Object Drawing.Point($columnX[2],375); $script:volumeBox.Size=New-Object Drawing.Size([Math]::Min(160,$columnWidth),30)
-  $script:volumeBox.BackColor=$script:colors.panel2; $script:volumeBox.ForeColor=$script:colors.text; $card.Controls.Add($script:volumeBox)
-  $aspectBadge=New-Object Windows.Forms.Label; $aspectBadge.Text='F8   TOGGLE ASPECT'; $aspectBadge.Location=New-Object Drawing.Point($columnX[0],409); $aspectBadge.Size=New-Object Drawing.Size($columnWidth,24)
-  $aspectBadge.TextAlign='MiddleCenter'; $aspectBadge.BackColor=$script:colors.selection; $aspectBadge.ForeColor=$script:colors.cyan
-  $aspectBadge.BorderStyle='FixedSingle'; $aspectBadge.Font=New-Object Drawing.Font($script:headingFontName,9); $card.Controls.Add($aspectBadge)
-  $filterNote=New-Label 'FXAA softens; Sharp + AA Off keeps text crisp.' 8 $false $script:colors.muted; $filterNote.AutoSize=$false; $filterNote.Size=New-Object Drawing.Size($columnWidth,30); $filterNote.Location=New-Object Drawing.Point($columnX[2],409); $card.Controls.Add($filterNote)
-  $rendererRule=New-Object Windows.Forms.Panel; $rendererRule.Location=New-Object Drawing.Point(25,441); $rendererRule.Size=New-Object Drawing.Size($card.Width-50,1); $rendererRule.BackColor=$script:colors.line; $card.Controls.Add($rendererRule)
-  $rendererLabel=New-Label 'RENDERER & PRESENTATION' 11 $true $script:colors.cyan; $rendererLabel.Location=New-Object Drawing.Point(25,454); $card.Controls.Add($rendererLabel)
+  function Add-SettingCombo([string]$caption,[int]$column,[int]$top,[object[]]$items,[int]$selected,[string]$note) {
+    $cap=New-Label $caption 8 $true $script:colors.muted; $cap.Location=New-Object Drawing.Point($columnX[$column],$top); $card.Controls.Add($cap)
+    $combo=New-Object Windows.Forms.ComboBox; $combo.DropDownStyle='DropDownList'; $combo.Items.AddRange($items)
+    $combo.SelectedIndex=[Math]::Max(0,$selected); $combo.Location=New-Object Drawing.Point($columnX[$column],($top + 22)); $combo.Size=New-Object Drawing.Size($columnWidth,30)
+    Set-DarkComboBox $combo; $card.Controls.Add($combo)
+    if ($note) {
+      $n=New-Label $note 8 $false $script:colors.muted; $n.AutoSize=$false; $n.AutoEllipsis=$true
+      $n.Size=New-Object Drawing.Size($columnWidth,18); $n.Location=New-Object Drawing.Point($columnX[$column],($top + 56)); $card.Controls.Add($n)
+    }
+    return $combo
+  }
+  $displayHeading=New-Label 'PICTURE & DISPLAY' 11 $true $script:colors.cyan; $displayHeading.Location=New-Object Drawing.Point(25,256); $card.Controls.Add($displayHeading)
+  $script:scaleBox = Add-SettingCombo 'INTERNAL RESOLUTION' 0 286 @('Auto / match window','1x','1.5x','2x','3x','4x','6x') ([Array]::IndexOf([double[]](Get-LauncherSettingAllowed 'scale'),[double]$script:scaleValue)) ''
+  $script:aspectBox = Add-SettingCombo 'ASPECT RATIO' 1 286 @('Original 4:3','Widescreen 16:9 (experimental)','Fill window (stretch)') ([Array]::IndexOf((Get-LauncherSettingAllowed 'aspect'),$script:aspectValue)) 'Press F8 in game to switch.'
+  $script:aaBox = Add-SettingCombo 'ANTI-ALIASING' 2 286 @('Off','FXAA') ([Array]::IndexOf((Get-LauncherSettingAllowed 'aa'),$script:aaValue)) 'FXAA softens edges and text.'
+  $script:filterBox = Add-SettingCombo 'OUTPUT FILTER' 0 366 @('Sharp (bicubic)','Smooth (bilinear)') ([Array]::IndexOf((Get-LauncherSettingAllowed 'filter'),$script:filterValue)) 'Sharp with AA off keeps text crisp.'
+  $script:deadzoneBox = Add-SettingCombo 'STICK DEADZONE' 1 366 @('Runtime default','Off (0%)','5%','10%','15%','20%','30%') ([Array]::IndexOf((Get-LauncherSettingAllowed 'deadzone'),$script:deadzoneValue)) 'Optional steering precision.'
+  # A dark dropdown in steps of 5; a value saved by hand that is not a step is kept as its own entry.
+  $script:volumeOptions = New-Object System.Collections.Generic.List[int]
+  for ($v=0; $v -le 100; $v+=5) { $script:volumeOptions.Add($v) }
+  if (-not $script:volumeOptions.Contains([int]$script:volumeValue)) { $script:volumeOptions.Add([int]$script:volumeValue); $script:volumeOptions.Sort() }
+  $script:volumeBox = Add-SettingCombo 'MASTER VOLUME' 2 366 ([object[]]@($script:volumeOptions | ForEach-Object { '{0}%' -f $_ })) ($script:volumeOptions.IndexOf([int]$script:volumeValue)) ''
+
+  $rendererRule=New-Object Windows.Forms.Panel; $rendererRule.Location=New-Object Drawing.Point(25,450); $rendererRule.Size=New-Object Drawing.Size(($card.Width-50),1); $rendererRule.BackColor=$script:colors.line; $card.Controls.Add($rendererRule)
+  $rendererLabel=New-Label 'RENDERER & PRESENTATION' 11 $true $script:colors.cyan; $rendererLabel.Location=New-Object Drawing.Point(25,464); $card.Controls.Add($rendererLabel)
   $script:fullscreenBox=New-Object Windows.Forms.CheckBox; $script:fullscreenBox.Text='Start fullscreen (Alt+Enter to toggle)'
-  $script:fullscreenBox.Checked=$script:fullscreenValue; $script:fullscreenBox.Location=New-Object Drawing.Point(25,481); $script:fullscreenBox.AutoSize=$true; $script:fullscreenBox.ForeColor=$script:colors.text; $card.Controls.Add($script:fullscreenBox)
+  $script:fullscreenBox.Checked=$script:fullscreenValue; $script:fullscreenBox.Location=New-Object Drawing.Point($columnX[0],492); $script:fullscreenBox.AutoSize=$true; $script:fullscreenBox.ForeColor=$script:colors.text; $card.Controls.Add($script:fullscreenBox)
   $script:vsyncBox=New-Object Windows.Forms.CheckBox; $script:vsyncBox.Text='Prevent screen tearing (VSync)'
-  $script:vsyncBox.Checked=$script:vsyncValue; $script:vsyncBox.Location=New-Object Drawing.Point(355,481); $script:vsyncBox.AutoSize=$true; $script:vsyncBox.ForeColor=$script:colors.text; $card.Controls.Add($script:vsyncBox)
-  $audioTitle=New-Label 'AUDIO & INPUT' 11 $true $script:colors.cyan; $audioTitle.Location=New-Object Drawing.Point(25,518); $card.Controls.Add($audioTitle)
-  $script:muteBox=New-Object Windows.Forms.CheckBox; $script:muteBox.Text='Mute game music'; $script:muteBox.Checked=[bool]$script:settings.muteMusic
-  $script:muteBox.Location=New-Object Drawing.Point(25,546); $script:muteBox.AutoSize=$true; $script:muteBox.ForeColor=$script:colors.text; $card.Controls.Add($script:muteBox)
-  $script:logBox=New-Object Windows.Forms.CheckBox; $script:logBox.Text='Record controller input for diagnostics'; $script:logBox.Checked=[bool]$script:settings.inputLog
-  $script:logBox.Location=New-Object Drawing.Point(215,546); $script:logBox.AutoSize=$true; $script:logBox.ForeColor=$script:colors.text; $card.Controls.Add($script:logBox)
-  $save=New-Button 'SAVE SETTINGS' 155 $true; $save.Location=New-Object Drawing.Point(25,582)
-  $save.Add_Click({
-    $script:discValue=$script:settings_disc.Text; $script:dolphinValue=$script:settings_dolphin.Text; $script:controlsValue=$script:settings_controls.Text
-    $script:scaleValue=[double](Get-LauncherSettingAllowed 'scale')[$script:scaleBox.SelectedIndex]
-    $script:aspectValue=(Get-LauncherSettingAllowed 'aspect')[$script:aspectBox.SelectedIndex]
-    $script:aaValue=(Get-LauncherSettingAllowed 'aa')[$script:aaBox.SelectedIndex]
-    $script:filterValue=(Get-LauncherSettingAllowed 'filter')[$script:filterBox.SelectedIndex]
-    $script:muteValue=$script:muteBox.Checked; $script:logValue=$script:logBox.Checked
-    $script:fullscreenValue=$script:fullscreenBox.Checked; $script:vsyncValue=$script:vsyncBox.Checked; $script:volumeValue=[int]$script:volumeBox.Value
-    $script:deadzoneValue=(Get-LauncherSettingAllowed 'deadzone')[$script:deadzoneBox.SelectedIndex]
-    Save-Settings; Set-Status 'Settings saved.' $true
-  }); $card.Controls.Add($save)
-  $controllerRule=New-Object Windows.Forms.Panel; $controllerRule.Location=New-Object Drawing.Point(25,634); $controllerRule.Size=New-Object Drawing.Size($card.Width-50,1); $controllerRule.BackColor=$script:colors.line; $card.Controls.Add($controllerRule)
-  $controllerTitle=New-Label 'CONTROLLER DETECTOR' 12 $true $script:colors.cyan
-  $controllerTitle.Location=New-Object Drawing.Point(25,646); $card.Controls.Add($controllerTitle)
+  $script:vsyncBox.Checked=$script:vsyncValue; $script:vsyncBox.Location=New-Object Drawing.Point($columnX[1],492); $script:vsyncBox.AutoSize=$true; $script:vsyncBox.ForeColor=$script:colors.text; $card.Controls.Add($script:vsyncBox)
+  $audioTitle=New-Label 'AUDIO & INPUT' 11 $true $script:colors.cyan; $audioTitle.Location=New-Object Drawing.Point(25,528); $card.Controls.Add($audioTitle)
+  $script:muteBox=New-Object Windows.Forms.CheckBox; $script:muteBox.Text='Mute game music'; $script:muteBox.Checked=[bool]$script:muteValue
+  $script:muteBox.Location=New-Object Drawing.Point($columnX[0],556); $script:muteBox.AutoSize=$true; $script:muteBox.ForeColor=$script:colors.text; $card.Controls.Add($script:muteBox)
+  $script:logBox=New-Object Windows.Forms.CheckBox; $script:logBox.Text='Record controller input for diagnostics'; $script:logBox.Checked=[bool]$script:logValue
+  $script:logBox.Location=New-Object Drawing.Point($columnX[1],556); $script:logBox.AutoSize=$true; $script:logBox.ForeColor=$script:colors.text; $card.Controls.Add($script:logBox)
+
+  $controllerRule=New-Object Windows.Forms.Panel; $controllerRule.Location=New-Object Drawing.Point(25,594); $controllerRule.Size=New-Object Drawing.Size(($card.Width-50),1); $controllerRule.BackColor=$script:colors.line; $card.Controls.Add($controllerRule)
+  $controllerTitle=New-Label 'CONTROLLER DETECTOR' 11 $true $script:colors.cyan
+  $controllerTitle.Location=New-Object Drawing.Point(25,608); $card.Controls.Add($controllerTitle)
   $controllerText=New-Label 'Press a pad button or move an axis; detected SDL names can be used in your optional controls mapping.' 9 $false $script:colors.muted
-  $controllerText.Location=New-Object Drawing.Point(25,673); $card.Controls.Add($controllerText)
-  $detect=New-Button 'DETECT CONTROLLER' 190 $true; $detect.Location=New-Object Drawing.Point(25,700)
+  $controllerText.Location=New-Object Drawing.Point(25,636); $controllerText.MaximumSize=New-Object Drawing.Size(($card.Width-50),0); $card.Controls.Add($controllerText)
+  $detect=New-Button 'DETECT CONTROLLER' 190 $true; $detect.Location=New-Object Drawing.Point(25,666)
   $detect.Add_Click({ Start-ControllerDetector }); $card.Controls.Add($detect)
-  $viewLog=New-Button 'VIEW LAST RESULTS' 168; $viewLog.Location=New-Object Drawing.Point(231,700)
+  $viewLog=New-Button 'VIEW LAST RESULTS' 168; $viewLog.Location=New-Object Drawing.Point(231,666)
   $viewLog.Add_Click({ Open-ControllerLog }); $card.Controls.Add($viewLog)
-  $editControls=New-Button 'CREATE / EDIT MAPPING' 190; $editControls.Location=New-Object Drawing.Point(414,700)
+  $editControls=New-Button 'CREATE / EDIT MAPPING' 190; $editControls.Location=New-Object Drawing.Point(414,666)
   $editControls.Add_Click({ Open-ControlsFile }); $card.Controls.Add($editControls)
+
+  # Any edit marks the page unsaved; attached after the initial values are filled in.
+  foreach ($box in @($script:settings_disc,$script:settings_dolphin,$script:settings_controls)) { $box.Add_TextChanged({ Set-SettingsDirty $true }) }
+  foreach ($combo in @($script:scaleBox,$script:aspectBox,$script:aaBox,$script:filterBox,$script:deadzoneBox,$script:volumeBox)) { $combo.Add_SelectedIndexChanged({ Set-SettingsDirty $true }) }
+  foreach ($check in @($script:fullscreenBox,$script:vsyncBox,$script:muteBox,$script:logBox)) { $check.Add_CheckedChanged({ Set-SettingsDirty $true }) }
   $script:content.Controls.Add($card)
 }
 
 function Build-AboutPage {
-  Add-SectionHeader $script:content 'About this project' 'A community-built native recompilation prototype for Star Fox Assault.'
+  Add-SectionHeader $script:content 'About Peregrine Forge' 'A community-built native recompilation prototype for Star Fox Assault.'
   $pageWidth=Get-ContentPageWidth
   $card=New-Card 30 112 $pageWidth 500
   $heading=New-Label $script:launcherBrand.ToUpperInvariant() 22 $true $script:colors.cyan; $heading.Location=New-Object Drawing.Point(25,24); $card.Controls.Add($heading)
-  $release=New-Label 'Version 0.2.0-rc.3 · native build prototype · validation is ongoing' 11 $true $script:colors.text; $release.Location=New-Object Drawing.Point(27,68); $card.Controls.Add($release)
+  $release=New-Label ('Version {0} · experimental native build · validation is ongoing' -f (Get-LauncherVersionText)) 11 $true $script:colors.text; $release.Location=New-Object Drawing.Point(27,68); $card.Controls.Add($release)
   $body=New-Label ("{0} is the launcher brand for {1}, an independent fan project. It can inspect your own USA ISO/CISO, prepare its portable build tools, compile the native application, and keep launcher settings and runtime data in this project folder. Your game image is read in place and is never copied, patched, or modified." -f $script:launcherBrand,$script:projectTitle) 10 $false $script:colors.muted
   $body.Location=New-Object Drawing.Point(27,112); $body.MaximumSize=New-Object Drawing.Size(($pageWidth-80),68); $body.AutoSize=$true; $card.Controls.Add($body)
-  $limit=New-Label 'Known limitation: the current native runtime has not been verified through a complete playthrough and is known to fail during a boss encounter. This is not a finished or fully compatible game release.' 10 $false $script:colors.text
+  $limit=New-Label 'Known limitations: first-mission flight, menus and saves have been tested. An unresolved crash (the current-thread pointer) can still end a session, the first-boss fix still needs live confirmation, and later missions are unverified. This is not a finished or fully compatible game release.' 10 $false $script:colors.text
   $limit.Location=New-Object Drawing.Point(27,196); $limit.MaximumSize=New-Object Drawing.Size(($pageWidth-80),65); $limit.AutoSize=$true; $limit.ForeColor=$script:colors.text; $card.Controls.Add($limit)
   $legal=New-Label ("You provide your own game image. No game image or Nintendo game assets are included. This community project is not affiliated with or endorsed by Nintendo or Namco. {0} is an unregistered project brand." -f $script:launcherBrand) 10 $false $script:colors.muted
   $legal.Location=New-Object Drawing.Point(27,275); $legal.MaximumSize=New-Object Drawing.Size(($pageWidth-80),55); $legal.AutoSize=$true; $card.Controls.Add($legal)
