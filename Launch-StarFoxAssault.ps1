@@ -90,6 +90,16 @@ $script:nativeModsValue = [bool]$script:settings.nativeMods
 $script:fullscreenValue = [bool]$script:settings.fullscreen
 $script:vsyncValue = [bool]$script:settings.vsync
 $script:volumeValue = [int]$script:settings.volume
+$script:anisotropyValue = [string]$script:settings.anisotropy
+$script:trilinearValue = [bool]$script:settings.trilinear
+$script:softParticlesValue = [bool]$script:settings.softParticles
+$script:hdTexturesValue = [bool]$script:settings.hdTextures
+$script:dumpTexturesValue = [bool]$script:settings.dumpTextures
+# HD texture packs (runtime gx/texture_pack.h): the installed pack, the one it replaced, and
+# where the texture dump for making packs goes.
+$script:hdTextureRoot = Join-Path $script:projectDir 'user-data\hd-textures'
+$script:hdTextureDir = Join-Path $script:hdTextureRoot 'active'
+$script:textureDumpDir = Join-Path $script:projectDir 'user-data\texture-dump'
 
 $script:colors = @{
   base = [Drawing.Color]::FromArgb(4,11,15)
@@ -139,6 +149,11 @@ function Save-Settings {
   $script:settings.fullscreen = [bool]$script:fullscreenValue
   $script:settings.vsync = [bool]$script:vsyncValue
   $script:settings.volume = [int]$script:volumeValue
+  $script:settings.anisotropy = [string]$script:anisotropyValue
+  $script:settings.trilinear = [bool]$script:trilinearValue
+  $script:settings.softParticles = [bool]$script:softParticlesValue
+  $script:settings.hdTextures = [bool]$script:hdTexturesValue
+  $script:settings.dumpTextures = [bool]$script:dumpTexturesValue
   # Write beside the profile and swap it in, so an interrupted save leaves the previous
   # settings readable instead of truncating them mid-document.
   $tempPath = $script:settingsPath + '.tmp'
@@ -439,6 +454,7 @@ function Start-NativeGame {
     if (-not $script:logValue) { $nativeArgs += '--no-input-log' }
     if ($script:muteValue) { $nativeArgs += '--no-music' }
     if ($script:controlsValue) { $nativeArgs += ('--controls=' + (ConvertTo-NativeArgument $script:controlsValue)) }
+    $nativeArgs += Get-NativeEnhancementArgumentList $script:settings $script:hdTextureDir $script:textureDumpDir
     $nativeArgs += (ConvertTo-NativeArgument $script:discValue)
     $logsDir = Join-Path $script:nativeRunDir 'logs'
     [IO.Directory]::CreateDirectory($logsDir) | Out-Null
@@ -1663,6 +1679,55 @@ function Install-TexturePack([string]$zipPath) {
     @{name=$packName;source=[IO.Path]::GetFileName($zipPath);installed=(Get-Date).ToString('s')} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $targetRoot 'launcher-pack.json') -Encoding utf8
   } finally { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
 }
+# An HD texture pack for the native build: PNGs named by texture hash (Test-HdTextureName),
+# anywhere in the ZIP. Only those are extracted, flattened into one folder; everything else
+# is ignored. Installed through a staging folder, so a bad ZIP leaves the current pack alone,
+# and the pack it replaces is kept as `previous`.
+function Install-HdTexturePack([string]$zipPath) {
+  if (Get-RunningNativeGame) { throw 'Close the native game before changing its HD texture pack.' }
+  $maxEntries = 200000; $maxExpandedBytes = [long]8GB; $total = [long]0; $count = 0
+  [IO.Directory]::CreateDirectory($script:hdTextureRoot) | Out-Null
+  $stage = Join-Path $script:hdTextureRoot ('staging-' + [Guid]::NewGuid().ToString('N'))
+  [IO.Directory]::CreateDirectory($stage) | Out-Null
+  try {
+    $archive = [IO.Compression.ZipFile]::OpenRead($zipPath)
+    try {
+      if ($archive.Entries.Count -gt $maxEntries) { throw "This pack has more than $maxEntries files and was not installed." }
+      foreach ($entry in $archive.Entries) {
+        $name = $entry.Name
+        if (-not (Test-HdTextureName $name)) { continue }
+        if ($entry.Length -lt 0 -or ($total + $entry.Length) -gt $maxExpandedBytes) { throw 'This pack expands beyond the 8 GiB safety limit and was not installed.' }
+        $target = Join-Path $stage $name.ToLowerInvariant()
+        if (Test-Path -LiteralPath $target) { continue }  # the same texture twice: the first wins
+        $src = $entry.Open(); $dst = [IO.File]::Open($target,[IO.FileMode]::CreateNew)
+        try {
+          $buffer = New-Object byte[] (1024*1024); $entryBytes = [long]0
+          while (($read = $src.Read($buffer,0,$buffer.Length)) -gt 0) {
+            $entryBytes += $read; $total += $read
+            if ($entryBytes -gt $entry.Length -or $total -gt $maxExpandedBytes) { throw 'This pack expanded beyond its declared size or the 8 GiB safety limit.' }
+            $dst.Write($buffer,0,$read)
+          }
+          if ($entryBytes -ne $entry.Length) { throw 'A pack entry was incomplete; nothing was installed.' }
+        } finally { $dst.Dispose(); $src.Dispose() }
+        $count++
+      }
+    } finally { $archive.Dispose() }
+    if (-not $count) { throw 'No textures were found. An HD pack holds PNGs named by texture hash, like 0123456789abcdef.png (the names the texture dump gives).' }
+    @{ name = [IO.Path]::GetFileNameWithoutExtension($zipPath); files = $count; installed = (Get-Date).ToString('s') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'pack.json') -Encoding utf8
+    $previous = Join-Path $script:hdTextureRoot 'previous'
+    if (Test-Path -LiteralPath $script:hdTextureDir) {
+      if (Test-Path -LiteralPath $previous) { Remove-Item -LiteralPath $previous -Recurse -Force }
+      Move-Item -LiteralPath $script:hdTextureDir -Destination $previous
+    }
+    Move-Item -LiteralPath $stage -Destination $script:hdTextureDir
+    return $count
+  } finally { if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue } }
+}
+function Get-HdTexturePackText {
+  $meta = Join-Path $script:hdTextureDir 'pack.json'
+  if (-not (Test-Path -LiteralPath $script:hdTextureDir -PathType Container)) { return 'No HD texture pack installed.' }
+  try { $m = Get-Content -LiteralPath $meta -Raw | ConvertFrom-Json; return ('INSTALLED: {0} · {1} textures' -f $m.name,$m.files) } catch { return 'Pack folder present; details unavailable.' }
+}
 function Get-PythonExecutable {
   # The first build downloads and hash-verifies a portable Python (tools\portable-toolchain.json),
   # so native asset packs can use that copy instead of requiring a separate install. The
@@ -1852,6 +1917,28 @@ function Build-ModsPage {
   $nativeState=if(Test-Path -LiteralPath $metaPath){ try { $m=Get-Content -LiteralPath $metaPath -Raw | ConvertFrom-Json; 'ACTIVE: {0} · {1} files' -f $m.name,$m.files } catch { 'Active folder present; pack details unavailable.' } } else { 'No native replacement pack installed.' }
   $stateLabel=New-Label $nativeState 8 $false $script:colors.muted; $stateLabel.Location=New-Object Drawing.Point(538,137); $nativeCard.Controls.Add($stateLabel)
   $script:content.Controls.Add($nativeCard)
+
+  # HD texture packs for the native build (runtime gx/texture_pack.h).
+  $hdCard=New-Card 30 680 $pageWidth 200
+  $h=New-Label 'HD TEXTURE PACK (NATIVE)' 9 $true $script:colors.cyan; $h.Location=New-Object Drawing.Point(22,17); $hdCard.Controls.Add($h)
+  $hd=New-Label 'PNGs named by texture hash, at 2, 4 or 8 times the original size. Turn on "Dump textures" and play to get the originals to upscale or repaint; switch the pack on in Systems & Controls.' 9 $false $script:colors.muted
+  $hd.Location=New-Object Drawing.Point(22,42); $hd.MaximumSize=New-Object Drawing.Size(($pageWidth - 48),0); $hdCard.Controls.Add($hd)
+  $script:dumpTexturesCheck=New-Object Windows.Forms.CheckBox; $script:dumpTexturesCheck.Text='Dump textures while playing (to user-data\texture-dump)'; $script:dumpTexturesCheck.AutoSize=$true
+  $script:dumpTexturesCheck.Location=New-Object Drawing.Point(22,88); $script:dumpTexturesCheck.ForeColor=$script:colors.text; $script:dumpTexturesCheck.BackColor=[Drawing.Color]::Transparent; $script:dumpTexturesCheck.Checked=[bool]$script:dumpTexturesValue
+  $script:dumpTexturesCheck.Add_CheckedChanged({ $script:dumpTexturesValue=[bool]$script:dumpTexturesCheck.Checked; Save-Settings; Set-Status ($(if($script:dumpTexturesValue){'Textures will be dumped on the next launch.'}else{'Texture dump off.'})) $true })
+  $hdCard.Controls.Add($script:dumpTexturesCheck)
+  $installHd=New-Button 'INSTALL HD PACK ZIP' 180 $true; $installHd.Location=New-Object Drawing.Point(22,126)
+  $installHd.Add_Click({
+    $d=New-Object Windows.Forms.OpenFileDialog; $d.Filter='HD texture pack (*.zip)|*.zip'
+    if ($d.ShowDialog($script:form) -eq 'OK') {
+      try { $n=Install-HdTexturePack $d.FileName; $script:hdPackLabel.Text=Get-HdTexturePackText; Set-Status ("Installed {0} HD textures. Switch the pack on in Systems & Controls." -f $n) $true }
+      catch { Set-Status $_.Exception.Message }
+    }
+  }); $hdCard.Controls.Add($installHd)
+  $openDump=New-Button 'OPEN DUMP FOLDER' 170; $openDump.Location=New-Object Drawing.Point(215,126); $openDump.Add_Click({ Open-Folder $script:textureDumpDir }); $hdCard.Controls.Add($openDump)
+  $openHd=New-Button 'OPEN PACK FOLDER' 170; $openHd.Location=New-Object Drawing.Point(398,126); $openHd.Add_Click({ Open-Folder $script:hdTextureDir }); $hdCard.Controls.Add($openHd)
+  $script:hdPackLabel=New-Label (Get-HdTexturePackText) 8 $false $script:colors.muted; $script:hdPackLabel.Location=New-Object Drawing.Point(583,137); $hdCard.Controls.Add($script:hdPackLabel)
+  $script:content.Controls.Add($hdCard)
 }
 
 # Reads every Settings control into the profile and saves it.
@@ -1866,6 +1953,8 @@ function Save-SettingsPage {
   $script:volumeValue=[int]$script:volumeOptions[$script:volumeBox.SelectedIndex]
   $script:muteValue=$script:muteBox.Checked; $script:logValue=$script:logBox.Checked
   $script:fullscreenValue=$script:fullscreenBox.Checked; $script:vsyncValue=$script:vsyncBox.Checked
+  $script:anisotropyValue=(Get-LauncherSettingAllowed 'anisotropy')[$script:anisotropyBox.SelectedIndex]
+  $script:trilinearValue=$script:trilinearBox.Checked; $script:softParticlesValue=$script:softBox.Checked; $script:hdTexturesValue=$script:hdTexturesBox.Checked
   Save-Settings
   Set-SettingsDirty $false
   Set-Status 'Settings saved.' $true
@@ -1885,7 +1974,7 @@ function Build-SettingsPage {
   $script:settingsDirtyLabel.Location=New-Object Drawing.Point((30 + $pageWidth - 360),44); $script:settingsDirtyLabel.Size=New-Object Drawing.Size(188,40)
   $script:settingsDirtyLabel.Visible=$false; $script:content.Controls.Add($script:settingsDirtyLabel)
 
-  $card=New-Card 30 112 $pageWidth 730
+  $card=New-Card 30 112 $pageWidth 842
   $script:discValue=$script:settings.disc; $script:dolphinValue=$script:settings.dolphin; $script:controlsValue=$script:settings.controls
   $rows=@(
     @{label='GAME IMAGE';value=$script:discValue;id='disc'},
@@ -1936,34 +2025,58 @@ function Build-SettingsPage {
   if (-not $script:volumeOptions.Contains([int]$script:volumeValue)) { $script:volumeOptions.Add([int]$script:volumeValue); $script:volumeOptions.Sort() }
   $script:volumeBox = Add-SettingCombo 'MASTER VOLUME' 2 366 ([object[]]@($script:volumeOptions | ForEach-Object { '{0}%' -f $_ })) ($script:volumeOptions.IndexOf([int]$script:volumeValue)) ''
 
-  $rendererRule=New-Object Windows.Forms.Panel; $rendererRule.Location=New-Object Drawing.Point(25,450); $rendererRule.Size=New-Object Drawing.Size(($card.Width-50),1); $rendererRule.BackColor=$script:colors.line; $card.Controls.Add($rendererRule)
-  $rendererLabel=New-Label 'RENDERER & PRESENTATION' 11 $true $script:colors.cyan; $rendererLabel.Location=New-Object Drawing.Point(25,464); $card.Controls.Add($rendererLabel)
+  # HD enhancements: renderer options past what the console drew, all off by default.
+  $hdRule=New-Object Windows.Forms.Panel; $hdRule.Location=New-Object Drawing.Point(25,450); $hdRule.Size=New-Object Drawing.Size(($card.Width-50),1); $hdRule.BackColor=$script:colors.line; $card.Controls.Add($hdRule)
+  $hdHeading=New-Label 'HD ENHANCEMENTS' 11 $true $script:colors.cyan; $hdHeading.Location=New-Object Drawing.Point(25,464); $card.Controls.Add($hdHeading)
+  $preset=New-Button 'APPLY HD PRESET' 170; $preset.Location=New-Object Drawing.Point(($card.Width-195),458); $preset.Anchor='Top,Right'
+  $presetTip=New-Object Windows.Forms.ToolTip; $presetTip.SetToolTip($preset,'4x resolution, 16x anisotropic filtering, trilinear mips, sharp output. Save to keep it.')
+  $card.Controls.Add($preset)
+  $script:anisotropyBox = Add-SettingCombo 'ANISOTROPIC FILTERING' 0 486 @('Off','2x','4x','8x','16x') ([Array]::IndexOf((Get-LauncherSettingAllowed 'anisotropy'),$script:anisotropyValue)) 'Sharper ground and walls at an angle.'
+  $script:trilinearBox=New-Object Windows.Forms.CheckBox; $script:trilinearBox.Text='Smooth mip transitions (trilinear)'; $script:trilinearBox.Checked=$script:trilinearValue
+  $script:trilinearBox.Location=New-Object Drawing.Point($columnX[1],494); $script:trilinearBox.AutoSize=$true; $script:trilinearBox.ForeColor=$script:colors.text; $card.Controls.Add($script:trilinearBox)
+  $script:softBox=New-Object Windows.Forms.CheckBox; $script:softBox.Text='Soft particles (experimental)'; $script:softBox.Checked=$script:softParticlesValue
+  $script:softBox.Location=New-Object Drawing.Point($columnX[1],522); $script:softBox.AutoSize=$true; $script:softBox.ForeColor=$script:colors.text; $card.Controls.Add($script:softBox)
+  $script:hdTexturesBox=New-Object Windows.Forms.CheckBox; $script:hdTexturesBox.Text='Use HD texture pack'; $script:hdTexturesBox.Checked=$script:hdTexturesValue
+  $script:hdTexturesBox.Location=New-Object Drawing.Point($columnX[2],494); $script:hdTexturesBox.AutoSize=$true; $script:hdTexturesBox.ForeColor=$script:colors.text; $card.Controls.Add($script:hdTexturesBox)
+  $hdPackState = if (Test-Path -LiteralPath $script:hdTextureDir -PathType Container) { 'Pack installed. Manage it in Mod Library.' } else { 'No pack installed; see Mod Library.' }
+  $hdNote=New-Label $hdPackState 8 $false $script:colors.muted; $hdNote.AutoSize=$false; $hdNote.AutoEllipsis=$true; $hdNote.Size=New-Object Drawing.Size($columnWidth,18); $hdNote.Location=New-Object Drawing.Point($columnX[2],524); $card.Controls.Add($hdNote)
+  $preset.Add_Click({
+    $p = Get-HdPresetSettings
+    $script:scaleBox.SelectedIndex = [Array]::IndexOf([double[]](Get-LauncherSettingAllowed 'scale'),[double]$p.scale)
+    $script:aaBox.SelectedIndex = [Array]::IndexOf((Get-LauncherSettingAllowed 'aa'),$p.aa)
+    $script:filterBox.SelectedIndex = [Array]::IndexOf((Get-LauncherSettingAllowed 'filter'),$p.filter)
+    $script:anisotropyBox.SelectedIndex = [Array]::IndexOf((Get-LauncherSettingAllowed 'anisotropy'),$p.anisotropy)
+    $script:trilinearBox.Checked = $p.trilinear
+    Set-Status 'HD preset applied. Save settings to keep it.' $true
+  })
+  $rendererRule=New-Object Windows.Forms.Panel; $rendererRule.Location=New-Object Drawing.Point(25,562); $rendererRule.Size=New-Object Drawing.Size(($card.Width-50),1); $rendererRule.BackColor=$script:colors.line; $card.Controls.Add($rendererRule)
+  $rendererLabel=New-Label 'RENDERER & PRESENTATION' 11 $true $script:colors.cyan; $rendererLabel.Location=New-Object Drawing.Point(25,576); $card.Controls.Add($rendererLabel)
   $script:fullscreenBox=New-Object Windows.Forms.CheckBox; $script:fullscreenBox.Text='Start fullscreen (Alt+Enter to toggle)'
-  $script:fullscreenBox.Checked=$script:fullscreenValue; $script:fullscreenBox.Location=New-Object Drawing.Point($columnX[0],492); $script:fullscreenBox.AutoSize=$true; $script:fullscreenBox.ForeColor=$script:colors.text; $card.Controls.Add($script:fullscreenBox)
+  $script:fullscreenBox.Checked=$script:fullscreenValue; $script:fullscreenBox.Location=New-Object Drawing.Point($columnX[0],604); $script:fullscreenBox.AutoSize=$true; $script:fullscreenBox.ForeColor=$script:colors.text; $card.Controls.Add($script:fullscreenBox)
   $script:vsyncBox=New-Object Windows.Forms.CheckBox; $script:vsyncBox.Text='Prevent screen tearing (VSync)'
-  $script:vsyncBox.Checked=$script:vsyncValue; $script:vsyncBox.Location=New-Object Drawing.Point($columnX[1],492); $script:vsyncBox.AutoSize=$true; $script:vsyncBox.ForeColor=$script:colors.text; $card.Controls.Add($script:vsyncBox)
-  $audioTitle=New-Label 'AUDIO & INPUT' 11 $true $script:colors.cyan; $audioTitle.Location=New-Object Drawing.Point(25,528); $card.Controls.Add($audioTitle)
+  $script:vsyncBox.Checked=$script:vsyncValue; $script:vsyncBox.Location=New-Object Drawing.Point($columnX[1],604); $script:vsyncBox.AutoSize=$true; $script:vsyncBox.ForeColor=$script:colors.text; $card.Controls.Add($script:vsyncBox)
+  $audioTitle=New-Label 'AUDIO & INPUT' 11 $true $script:colors.cyan; $audioTitle.Location=New-Object Drawing.Point(25,640); $card.Controls.Add($audioTitle)
   $script:muteBox=New-Object Windows.Forms.CheckBox; $script:muteBox.Text='Mute game music'; $script:muteBox.Checked=[bool]$script:muteValue
-  $script:muteBox.Location=New-Object Drawing.Point($columnX[0],556); $script:muteBox.AutoSize=$true; $script:muteBox.ForeColor=$script:colors.text; $card.Controls.Add($script:muteBox)
+  $script:muteBox.Location=New-Object Drawing.Point($columnX[0],668); $script:muteBox.AutoSize=$true; $script:muteBox.ForeColor=$script:colors.text; $card.Controls.Add($script:muteBox)
   $script:logBox=New-Object Windows.Forms.CheckBox; $script:logBox.Text='Record controller input for diagnostics'; $script:logBox.Checked=[bool]$script:logValue
-  $script:logBox.Location=New-Object Drawing.Point($columnX[1],556); $script:logBox.AutoSize=$true; $script:logBox.ForeColor=$script:colors.text; $card.Controls.Add($script:logBox)
+  $script:logBox.Location=New-Object Drawing.Point($columnX[1],668); $script:logBox.AutoSize=$true; $script:logBox.ForeColor=$script:colors.text; $card.Controls.Add($script:logBox)
 
-  $controllerRule=New-Object Windows.Forms.Panel; $controllerRule.Location=New-Object Drawing.Point(25,594); $controllerRule.Size=New-Object Drawing.Size(($card.Width-50),1); $controllerRule.BackColor=$script:colors.line; $card.Controls.Add($controllerRule)
+  $controllerRule=New-Object Windows.Forms.Panel; $controllerRule.Location=New-Object Drawing.Point(25,706); $controllerRule.Size=New-Object Drawing.Size(($card.Width-50),1); $controllerRule.BackColor=$script:colors.line; $card.Controls.Add($controllerRule)
   $controllerTitle=New-Label 'CONTROLLER DETECTOR' 11 $true $script:colors.cyan
-  $controllerTitle.Location=New-Object Drawing.Point(25,608); $card.Controls.Add($controllerTitle)
+  $controllerTitle.Location=New-Object Drawing.Point(25,720); $card.Controls.Add($controllerTitle)
   $controllerText=New-Label 'Press a pad button or move an axis; detected SDL names can be used in your optional controls mapping.' 9 $false $script:colors.muted
-  $controllerText.Location=New-Object Drawing.Point(25,636); $controllerText.MaximumSize=New-Object Drawing.Size(($card.Width-50),0); $card.Controls.Add($controllerText)
-  $detect=New-Button 'DETECT CONTROLLER' 190 $true; $detect.Location=New-Object Drawing.Point(25,666)
+  $controllerText.Location=New-Object Drawing.Point(25,748); $controllerText.MaximumSize=New-Object Drawing.Size(($card.Width-50),0); $card.Controls.Add($controllerText)
+  $detect=New-Button 'DETECT CONTROLLER' 190 $true; $detect.Location=New-Object Drawing.Point(25,778)
   $detect.Add_Click({ Start-ControllerDetector }); $card.Controls.Add($detect)
-  $viewLog=New-Button 'VIEW LAST RESULTS' 168; $viewLog.Location=New-Object Drawing.Point(231,666)
+  $viewLog=New-Button 'VIEW LAST RESULTS' 168; $viewLog.Location=New-Object Drawing.Point(231,778)
   $viewLog.Add_Click({ Open-ControllerLog }); $card.Controls.Add($viewLog)
-  $editControls=New-Button 'CREATE / EDIT MAPPING' 190; $editControls.Location=New-Object Drawing.Point(414,666)
+  $editControls=New-Button 'CREATE / EDIT MAPPING' 190; $editControls.Location=New-Object Drawing.Point(414,778)
   $editControls.Add_Click({ Open-ControlsFile }); $card.Controls.Add($editControls)
 
   # Any edit marks the page unsaved; attached after the initial values are filled in.
   foreach ($box in @($script:settings_disc,$script:settings_dolphin,$script:settings_controls)) { $box.Add_TextChanged({ Set-SettingsDirty $true }) }
-  foreach ($combo in @($script:scaleBox,$script:aspectBox,$script:aaBox,$script:filterBox,$script:deadzoneBox,$script:volumeBox)) { $combo.Add_SelectedIndexChanged({ Set-SettingsDirty $true }) }
-  foreach ($check in @($script:fullscreenBox,$script:vsyncBox,$script:muteBox,$script:logBox)) { $check.Add_CheckedChanged({ Set-SettingsDirty $true }) }
+  foreach ($combo in @($script:scaleBox,$script:aspectBox,$script:aaBox,$script:filterBox,$script:deadzoneBox,$script:volumeBox,$script:anisotropyBox)) { $combo.Add_SelectedIndexChanged({ Set-SettingsDirty $true }) }
+  foreach ($check in @($script:fullscreenBox,$script:vsyncBox,$script:muteBox,$script:logBox,$script:trilinearBox,$script:softBox,$script:hdTexturesBox)) { $check.Add_CheckedChanged({ Set-SettingsDirty $true }) }
   $script:content.Controls.Add($card)
 }
 

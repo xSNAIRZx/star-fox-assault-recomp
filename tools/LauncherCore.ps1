@@ -22,6 +22,44 @@ $script:LauncherSettingSchema = [ordered]@{
   # Empty leaves the runtime's own per-axis thresholds alone, which is what a profile saved
   # before this setting existed should keep using.
   deadzone   = @{ Type = 'string'; Default = ''; Allowed = @('','0','5','10','15','20','30') }
+  # HD enhancements (runtime render_set_texture_filtering, render_set_soft_particles and
+  # gx/texture_pack.h). All off by default: the game as the console drew it.
+  anisotropy    = @{ Type = 'string'; Default = '0'; Allowed = @('0','2','4','8','16') }
+  trilinear     = @{ Type = 'bool';   Default = $false }
+  softParticles = @{ Type = 'bool';   Default = $false }
+  hdTextures    = @{ Type = 'bool';   Default = $false }
+  dumpTextures  = @{ Type = 'bool';   Default = $false }
+}
+
+# The HD preset: 4x internal resolution, 16x anisotropic filtering, trilinear mips, sharp
+# output without FXAA. Aspect, audio, input and soft particles are left as they are: soft
+# particles also dim glow cards a game lays onto its models on purpose (an engine's glare
+# across a hull, say), so they stay a choice of their own.
+function Get-HdPresetSettings {
+  return [ordered]@{ scale = 4.0; aa = 'off'; filter = 'sharp'; anisotropy = '16'; trilinear = $true }
+}
+
+# The runtime flags for the HD enhancements. Texture paths are quoted for the command line;
+# a pack is passed only when it is switched on and its folder exists.
+function Get-NativeEnhancementArgumentList($settings, [string]$hdTextureDir, [string]$textureDumpDir) {
+  $list = New-Object System.Collections.Generic.List[string]
+  $aniso = ConvertTo-LauncherSettingValue 'anisotropy' $settings.anisotropy
+  if ($aniso -ne '0') { $list.Add("--anisotropy=$aniso") }
+  if (ConvertTo-LauncherSettingValue 'trilinear' $settings.trilinear) { $list.Add('--trilinear=1') }
+  if (ConvertTo-LauncherSettingValue 'softParticles' $settings.softParticles) { $list.Add('--soft-particles=1') }
+  if ((ConvertTo-LauncherSettingValue 'hdTextures' $settings.hdTextures) -and $hdTextureDir -and (Test-Path -LiteralPath $hdTextureDir -PathType Container)) {
+    $list.Add('--texture-pack=' + (ConvertTo-NativeArgument $hdTextureDir))
+  }
+  if ((ConvertTo-LauncherSettingValue 'dumpTextures' $settings.dumpTextures) -and $textureDumpDir) {
+    $list.Add('--texture-dump=' + (ConvertTo-NativeArgument $textureDumpDir))
+  }
+  return ,$list.ToArray()
+}
+
+# A file an HD texture pack may hold: a texture's 16-hex-digit content hash and .png, as the
+# runtime's texture dump names them. Anything else in a pack ZIP is ignored.
+function Test-HdTextureName([string]$name) {
+  return [bool]($name -match '^[0-9A-Fa-f]{16}\.[Pp][Nn][Gg]$')
 }
 
 function Get-LauncherSettingDefaults {

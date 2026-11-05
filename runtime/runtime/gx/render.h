@@ -26,6 +26,8 @@ struct GpuVertex {
     uint32_t src_draw;
 };
 
+struct TexHd;  // texture_pack.h
+
 // Decoded texture (RGBA8, all mip levels), immutable once created.
 struct TexData {
     uint32_t id;
@@ -35,6 +37,9 @@ struct TexData {
     // same hash in every run, where `id` is only the order it was decoded in. What a game
     // project names a texture by (a draw filter that hides a model's materials, say).
     uint64_t hash = 0;
+    // A texture pack's larger replacement (texture_pack.h), uploaded in place of `levels`.
+    // width, height and texture coordinates stay the original's.
+    std::shared_ptr<const TexHd> hd;
 };
 
 // Everything the pixel pipeline needs for a draw.

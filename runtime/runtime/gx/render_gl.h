@@ -55,6 +55,21 @@ void render_set_internal_scale(float scale);
 
 void render_set_window_size(int w, int h);
 void render_set_display_options(DisplayAspect aspect, bool fxaa, bool sharp = true);
+// Texture filtering past what the game asked for. Set before render_init.
+//  anisotropy  up to this many samples along a surface seen at a slant (2, 4, 8 or 16; 0 or
+//              1 is off), for mipmapped textures the game filters linearly: ground and
+//              walls stay sharp into the distance instead of blurring. Clamped to what the GL
+//              offers; a GL without the extension leaves it off.
+//  trilinear   blend between mip levels where the game picks the nearest one, so the seams
+//              where a surface steps from one level to the next stop showing.
+void render_set_texture_filtering(int anisotropy, bool trilinear);
+// Soft particles, in the flat view. A draw that adds light -- additive blending, depth
+// tested but not written, in perspective: sparks, explosions, glows, beams -- fades out where
+// it meets the scene behind it, over `range` of its own distance from the camera (0.05 is 5%),
+// instead of cutting a hard line where it crosses a wall or the ground. Shadows and decals
+// blend another way and are left alone. Needs a 17th texture unit; a GL with only 16 leaves
+// it off. Set before render_init.
+void render_set_soft_particles(bool on, float range = 0.05f);
 void render_get_display_size(int& width, int& height);
 // Hidden GPU regression check; no game image or memory card is opened.
 bool render_test_display_options();

@@ -29,6 +29,10 @@ struct ShaderKey {
     // Set by the renderer, not make_shader_key: a draw an eye gives a foreground layer's game
     // depth (u_vr 4), whose depth is then worked out per fragment (see the vertex shader).
     uint32_t fg_depth;
+    // Set by the renderer, not make_shader_key: an additive draw that tests depth without
+    // writing it -- sparks, glows, beams -- fades out where it meets the scene behind it
+    // instead of cutting a hard line through it (render_set_soft_particles).
+    uint32_t soft;
     bool operator==(const ShaderKey& o) const { return memcmp(this, &o, sizeof(*this)) == 0; }
 };
 

@@ -6,6 +6,7 @@
 #include "render.h"
 #include "render_gl.h"
 #include "shadergen.h"
+#include "texture_pack.h"
 #include "texcoord.h"
 #include "render_math.h"
 #include "gl.h"
@@ -92,6 +93,7 @@ struct Program {
         u_alpharef, u_fog, u_fogmode, u_fogcolor, u_indcoordscale, u_texsnap, u_zbias, u_zplane, u_dstalpha;
     GLint u_vr, u_view, u_crop, u_zproj, u_screen_uv, u_screen_px, u_screen_ripple, u_uvgrad;
     GLint u_points, u_point_off;
+    GLint u_soft;  // ShaderKey::soft
     mutable UniformShadow shadow;
 };
 
@@ -392,14 +394,16 @@ static std::unordered_map<ShaderKey, Program, ShaderKeyHash> g_programs;
 // -- a fog volume showed it as bright specks along a waterline -- so it is always sampled
 // nearest. (At the console's own resolution a full-screen quad lands on texel centres and
 // a filter changes nothing; at a higher internal scale it does not.)
-struct GlTex { GLuint tex; uint32_t w, h, levels; bool efb; bool grab; bool depth; uint32_t last_used; uint64_t hash; };
+// hd_shift: levels a texture pack's replacement has above the game's top one (TexHd::shift),
+// 0 for the game's own texels. `levels` counts the uploaded chain, replacement or not.
+struct GlTex { GLuint tex; uint32_t w, h, levels; bool efb; bool grab; bool depth; uint32_t last_used; uint64_t hash; uint32_t hd_shift; };
 static std::unordered_map<uint32_t, GlTex> g_textures;
 // Frames counted here rather than reusing the GX frame counter, so eviction works the
 // same for any frontend. Textures the game stops using are released: a race streams
 // them continuously, and without this both the GL objects and the decoded copies grow
 // without bound until the device runs out of memory and crawls.
 static uint32_t g_render_frame;
-static std::unordered_map<uint32_t, GLuint> g_samplers;
+static std::unordered_map<uint64_t, GLuint> g_samplers;
 static int g_win_w, g_win_h;
 bool g_cull_swap = false;
 
@@ -622,6 +626,10 @@ static const Program& register_program(const ShaderKey& k, GLuint p) {
         GLint pal_units[8] = {8, 9, 10, 11, 12, 13, 14, 15};
         glUniform1iv(u_pal, 8, pal_units);
     }
+    // Soft particles' copy of the scene's depth, on the unit after the palettes'.
+    const GLint u_softdepth = glGetUniformLocation(p, "u_softdepth");
+    if (u_softdepth >= 0) glUniform1i(u_softdepth, 16);
+    pr.u_soft = glGetUniformLocation(p, "u_soft");
     return g_programs.emplace(k, pr).first->second;
 }
 
@@ -1079,6 +1087,9 @@ void main() {
 }
 )";
 
+static void init_texture_filtering();  // with get_sampler
+static void init_soft_particles();
+
 void render_init(float internal_scale) {
     if (!std::isfinite(internal_scale)) internal_scale = 1.0f;
     g_scale = std::clamp(internal_scale, 1.0f, static_cast<float>(kMaxInternalScale));
@@ -1115,6 +1126,8 @@ void render_init(float internal_scale) {
     glEnable(GL_CLIP_DISTANCE0 + 5);
 #endif
     g_renderer_writes_back = true;  // see set_copy_writeback in gx.h
+    init_texture_filtering();
+    init_soft_particles();
     g_vs_hash = hash_str(vs_src.c_str());
     g_vs = compile(GL_VERTEX_SHADER, vs_src);
 #if GCN_HAVE_PROGRAM_BINARY
@@ -1355,37 +1368,45 @@ uint64_t render_texture_hash(uint32_t id) {
 
 // `from_pbo`: the texels are in the bound pixel unpack buffer from `pbo_off` on, every level
 // in turn, rather than in `t` (upload_textures).
+// The texels a texture is uploaded from: a texture pack's replacement where it has one.
+static const std::vector<std::vector<uint32_t>>& upload_levels(const TexData& t) {
+    return t.hd ? t.hd->levels : t.levels;
+}
+
 static void upload_texture(const TexData& t, bool from_pbo = false, size_t pbo_off = 0) {
     GlTex g{};
     glGenTextures(1, &g.tex);
     glBindTexture(GL_TEXTURE_2D, g.tex);
+    // The game's size, replacement or not: the shaders and EFB-copy bookkeeping work in it.
     g.w = t.width; g.h = t.height;
     g.hash = t.hash;
-    uint32_t w = t.width, h = t.height;
+    g.hd_shift = t.hd ? t.hd->shift : 0;
+    const auto& levels = upload_levels(t);
+    uint32_t w = t.hd ? t.hd->width : t.width, h = t.hd ? t.hd->height : t.height;
 #ifdef GCN_GL_ES
     // Storage for the whole chain at once, rather than a level at a time into a mutable
     // texture: on an Adreno 740 that also took the first draw from the new textures from
     // about 100 ms to 2 (a room's worth of them at a door).
     uint32_t max_levels = 1;
     for (uint32_t d = w > h ? w : h; d > 1; d /= 2) max_levels++;
-    const size_t nlevels = t.levels.size() < max_levels ? t.levels.size() : max_levels;
+    const size_t nlevels = levels.size() < max_levels ? levels.size() : max_levels;
     glTexStorage2D(GL_TEXTURE_2D, (GLsizei)nlevels, GL_RGBA8, w, h);
     for (size_t l = 0; l < nlevels; l++) {
         glTexSubImage2D(GL_TEXTURE_2D, (GLint)l, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
-                        from_pbo ? (const void*)(uintptr_t)pbo_off : (const void*)t.levels[l].data());
-        pbo_off += t.levels[l].size() * 4;
+                        from_pbo ? (const void*)(uintptr_t)pbo_off : (const void*)levels[l].data());
+        pbo_off += levels[l].size() * 4;
         w = w > 1 ? w / 2 : 1;
         h = h > 1 ? h / 2 : 1;
     }
 #else
-    for (size_t l = 0; l < t.levels.size(); l++) {
-        glTexImage2D(GL_TEXTURE_2D, (GLint)l, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, t.levels[l].data());
+    for (size_t l = 0; l < levels.size(); l++) {
+        glTexImage2D(GL_TEXTURE_2D, (GLint)l, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, levels[l].data());
         w = w > 1 ? w / 2 : 1;
         h = h > 1 ? h / 2 : 1;
     }
 #endif
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)t.levels.size() - 1);
-    g.levels = (uint32_t)t.levels.size();
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)levels.size() - 1);
+    g.levels = (uint32_t)levels.size();
     g.last_used = g_render_frame;
     g_textures[t.id] = g;
     // GCN_TEXDUMP=<dir> writes every texture's top level as <dir>/tex_<id>.png, alpha
@@ -1401,8 +1422,143 @@ static void upload_texture(const TexData& t, bool from_pbo = false, size_t pbo_o
     }
 }
 
-static GLuint get_sampler(uint32_t mode0, uint32_t mode1, uint32_t levels) {
-    uint32_t key = (mode0 & 0x3FFFFF) ^ (mode1 << 22) ^ (levels << 30);
+// render_set_texture_filtering. The requested anisotropy becomes g_anisotropy in render_init,
+// once the GL can say whether it has the extension and how far it goes.
+static int g_anisotropy_wanted = 0;
+static float g_anisotropy = 0.0f;
+static bool g_force_trilinear = false;
+// GL_EXT_texture_filter_anisotropic / GL_ARB_texture_filter_anisotropic (core in 4.6); the
+// enums are the same in both, and in ES.
+constexpr GLenum kTextureMaxAnisotropy = 0x84FE;
+constexpr GLenum kMaxTextureMaxAnisotropy = 0x84FF;
+
+void render_set_texture_filtering(int anisotropy, bool trilinear) {
+    g_anisotropy_wanted = anisotropy > 1 ? std::min(anisotropy, 16) : 0;
+    g_force_trilinear = trilinear;
+}
+
+// Soft particles (render_set_soft_particles). The scene's depth is copied out of the EFB
+// before the first soft draw of a frame, and again before a later one if a draw has written
+// depth since -- a game may draw its effects between parts of the world -- up to a few times
+// a frame. A draw cannot read the depth buffer it is drawn into, so it reads the copy.
+static bool g_soft_wanted = false, g_soft_ok = false;
+static float g_soft_range = 0.05f;
+static GLuint g_soft_fbo = 0, g_soft_tex = 0;
+static GLsizei g_soft_w = 0, g_soft_h = 0;
+static uint32_t g_soft_frame = ~0u;
+static int g_soft_copies = 0;
+static bool g_soft_dirty = true;
+constexpr int kSoftCopiesPerFrame = 8;
+constexpr GLenum kSoftUnit = GL_TEXTURE0 + 16;
+
+void render_set_soft_particles(bool on, float range) {
+    g_soft_wanted = on;
+    if (std::isfinite(range) && range > 0.0f) g_soft_range = std::min(range, 1.0f);
+}
+
+static void init_soft_particles() {
+    g_soft_ok = false;
+    if (!g_soft_wanted) return;
+#ifdef GCN_GL_ES
+    fprintf(stderr, "graphics: soft particles are desktop-only so far\n");
+#else
+    GLint units = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &units);
+    if (units < 17) {
+        fprintf(stderr, "graphics: soft particles need 17 texture units and this GL has %d; left off\n", units);
+        return;
+    }
+    if (const char* r = getenv("GCN_SOFT_RANGE")) render_set_soft_particles(true, static_cast<float>(atof(r)));
+    g_soft_ok = true;
+    fprintf(stderr, "graphics: soft particles over %.0f%% of a draw's distance\n", g_soft_range * 100.0f);
+#endif
+}
+
+// Whether a draw is one soft particles apply to: blended additively (a destination factor of
+// one) and not subtracted or through a logic op, depth tested but not written, in
+// perspective, with its own depth (no Z freeze or Z texture), and no constant destination
+// alpha. What it adds then only ever brightens, so fading it is safe: a shadow or a decal,
+// which darkens or replaces, is never touched.
+static bool soft_particle_draw(const PixelState& st, const ShaderKey& key) {
+    const uint32_t* bp = st.bp;
+    const uint32_t bm = bp[0x41];
+    if (!(bm & 1) || ((bm >> 1) & 1) || ((bm >> 11) & 1)) return false;
+    if (((bm >> 5) & 7) != 1) return false;  // kBlendDst[1] is GL_ONE
+    const uint32_t zm = bp[0x40];
+    if (!(zm & 1) || ((zm >> 4) & 1)) return false;
+    if ((int)st.proj[6] != 0) return false;
+    if (((bp[0x00] >> 19) & 1) || key.ztex || key.dst_alpha) return false;
+    return true;
+}
+
+// Makes the copy current for a soft draw about to be made into the EFB and binds it to its
+// unit. False if it cannot (not drawing into the EFB), and the draw goes without.
+static bool prepare_soft_depth() {
+    GLint draw_fbo = 0, active_unit = GL_TEXTURE0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fbo);
+    if ((GLuint)draw_fbo != g_efb_fbo) return false;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &active_unit);
+    if (g_soft_frame != g_render_frame) { g_soft_frame = g_render_frame; g_soft_copies = 0; g_soft_dirty = true; }
+    const GLsizei w = scaled_size(EFB_W, g_scale), h = scaled_size(EFB_H, g_scale);
+    if (!g_soft_tex || g_soft_w != w || g_soft_h != h) {
+        if (!g_soft_tex) { glGenTextures(1, &g_soft_tex); glGenFramebuffers(1, &g_soft_fbo); }
+        glActiveTexture(kSoftUnit);
+        glBindTexture(GL_TEXTURE_2D, g_soft_tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_soft_fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, g_soft_tex, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_efb_fbo);
+        g_soft_w = w; g_soft_h = h;
+        g_soft_dirty = true;
+    }
+    if (g_soft_dirty && g_soft_copies < kSoftCopiesPerFrame) {
+        // A blit honours the scissor, which a draw leaves set to its own rectangle.
+        const GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+        if (scissor) glDisable(GL_SCISSOR_TEST);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, g_efb_fbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_soft_fbo);
+        glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_efb_fbo);
+        if (scissor) glEnable(GL_SCISSOR_TEST);
+        g_soft_dirty = false;
+        g_soft_copies++;
+    }
+    glActiveTexture(kSoftUnit);
+    glBindTexture(GL_TEXTURE_2D, g_soft_tex);
+    glActiveTexture((GLenum)active_unit);
+    return true;
+}
+
+static void init_texture_filtering() {
+    g_anisotropy = 0.0f;
+    if (g_anisotropy_wanted <= 1) return;
+    GLint n = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &n);
+    bool have = false;
+    for (GLint i = 0; i < n && !have; i++) {
+        const char* e = (const char*)glGetStringi(GL_EXTENSIONS, (GLuint)i);
+        have = e && (!strcmp(e, "GL_EXT_texture_filter_anisotropic") || !strcmp(e, "GL_ARB_texture_filter_anisotropic"));
+    }
+    if (!have) {
+        fprintf(stderr, "graphics: no anisotropic filtering in this GL; textures are filtered as the game asks\n");
+        return;
+    }
+    GLfloat most = 1.0f;
+    glGetFloatv(kMaxTextureMaxAnisotropy, &most);
+    g_anisotropy = std::min(static_cast<float>(g_anisotropy_wanted), most);
+    fprintf(stderr, "graphics: %gx anisotropic filtering%s\n", g_anisotropy, g_force_trilinear ? ", trilinear mips" : "");
+}
+
+// `hd_shift` (GlTex::hd_shift): the texture is a pack's replacement with that many levels
+// above the game's top one. The game's LOD limits are in its own levels, so they move down
+// the chain by as many; a texture the game samples without mips gets the replacement's extra
+// levels, and no further, so it is never blurrier than the original far away.
+static GLuint get_sampler(uint32_t mode0, uint32_t mode1, uint32_t levels, uint32_t hd_shift = 0) {
+    const uint64_t key = (uint64_t)(mode0 & 0x3FFFFF) | ((uint64_t)(mode1 & 0xFFFF) << 22) |
+                         ((uint64_t)std::min(levels, 255u) << 38) | ((uint64_t)(hd_shift & 3) << 46);
     auto it = g_samplers.find(key);
     if (it != g_samplers.end()) return it->second;
     GLuint s;
@@ -1414,16 +1570,28 @@ static GLuint get_sampler(uint32_t mode0, uint32_t mode1, uint32_t levels) {
     uint32_t minf = (mode0 >> 5) & 7;
     bool min_lin = minf & 4;
     uint32_t mip = minf & 3;
+    const bool game_mips = mip != 0;
+    // Only where the game already filters linearly: a texture it samples nearest is meant to
+    // look blocky (a font, a pixel-art icon), and blending its mips would blur it.
+    if (g_force_trilinear && min_lin && mip == 1) mip = 2;
+    if (hd_shift && !mip) mip = 2;
     glSamplerParameteri(s, GL_TEXTURE_MAG_FILTER, mag_lin ? GL_LINEAR : GL_NEAREST);
     GLenum mf;
     if (!mip || levels <= 1) mf = min_lin ? GL_LINEAR : GL_NEAREST;
     else if (mip == 1) mf = min_lin ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST;
     else mf = min_lin ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR;
     glSamplerParameteri(s, GL_TEXTURE_MIN_FILTER, mf);
+    // Anisotropy for the surfaces that have mips and are filtered linearly -- the world, not
+    // the HUD, whose textures have one level and face the camera anyway.
+    if (g_anisotropy > 1.0f && min_lin && mip && levels > 1)
+        glSamplerParameterf(s, kTextureMaxAnisotropy, g_anisotropy);
     int8_t bias = (int8_t)((mode0 >> 9) & 0xFF);
     set_lod_bias(s, bias / 32.0f);
-    glSamplerParameterf(s, GL_TEXTURE_MIN_LOD, (mode1 & 0xFF) / 16.0f);
-    glSamplerParameterf(s, GL_TEXTURE_MAX_LOD, ((mode1 >> 8) & 0xFF) / 16.0f);
+    const float min_lod = (mode1 & 0xFF) / 16.0f, max_lod = ((mode1 >> 8) & 0xFF) / 16.0f;
+    glSamplerParameterf(s, GL_TEXTURE_MIN_LOD, min_lod);
+    // The game's own texels keep exactly the game's limits (the clamp also decides between the
+    // magnification and minification filters, so it matters even without mips).
+    glSamplerParameterf(s, GL_TEXTURE_MAX_LOD, !hd_shift ? max_lod : game_mips ? max_lod + (float)hd_shift : (float)hd_shift);
     g_samplers[key] = s;
     return s;
 }
@@ -1817,6 +1985,10 @@ static void apply_state(const PixelState& st, int prim, float aspect_x = 1.0f) {
             st.viewport[5] / 16777215.0f <= g_fg_to && !g_cur_flat3d)
             key.fg_depth = 1;
     }
+    // Soft particles, in the flat view: the draw reads a copy of the depth drawn so far. A
+    // draw that writes depth makes that copy stale for the next one.
+    if (g_soft_ok && !g_vr_active && soft_particle_draw(st, key) && prepare_soft_depth()) key.soft = 1;
+    if ((bp[0x40] & 1) && ((bp[0x40] >> 4) & 1)) g_soft_dirty = true;
     g_astat.applies++;
     // `same` means the previous application is still in GL and the program is unchanged.
     const bool same = g_applied.valid && key == g_applied.key;
@@ -1832,6 +2004,7 @@ static void apply_state(const PixelState& st, int prim, float aspect_x = 1.0f) {
         g_applied.key = key;
         g_applied.pr = &pr;
     }
+    if (key.soft && pr.u_soft >= 0) glUniform1f(pr.u_soft, g_soft_range);
     // What this program was last given; see UniformShadow. A group is uploaded when its
     // inputs differ from the record, or the record is not current.
     UniformShadow& u = pr.shadow;
@@ -2353,7 +2526,7 @@ static void apply_state(const PixelState& st, int prim, float aspect_x = 1.0f) {
                 tsz[m * 2] = (float)((img0 & 0x3FF) + 1);
                 tsz[m * 2 + 1] = (float)(((img0 >> 10) & 0x3FF) + 1);
                 const uint32_t mode0 = gt->depth ? bp[base] & ~0xF0u : bp[base];  // see GlTex::depth
-                sampler = get_sampler(mode0, bp[base + 4], gt->efb ? 1 : gt->levels);
+                sampler = get_sampler(mode0, bp[base + 4], gt->efb ? 1 : gt->levels, gt->efb ? 0 : gt->hd_shift);
                 if (gt->depth) texsnap |= 1u << m;
             } else {
                 id = 0;
@@ -4334,14 +4507,14 @@ static void upload_textures(const Batch& b) {
     static GLuint pbo = 0;
     size_t total = 0;
     for (auto& t : b.new_textures)
-        for (auto& l : t->levels) total += l.size() * 4;
+        for (auto& l : upload_levels(*t)) total += l.size() * 4;
     if (!pbo) glGenBuffers(1, &pbo);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
     glBufferData(GL_PIXEL_UNPACK_BUFFER, (GLsizeiptr)total, nullptr, GL_STREAM_DRAW);
     if (uint8_t* m = (uint8_t*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, (GLsizeiptr)total,
                                                 GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT)) {
         for (auto& t : b.new_textures)
-            for (auto& l : t->levels) {
+            for (auto& l : upload_levels(*t)) {
                 memcpy(m, l.data(), l.size() * 4);
                 m += l.size() * 4;
             }
@@ -4349,7 +4522,7 @@ static void upload_textures(const Batch& b) {
             size_t off = 0;
             for (auto& t : b.new_textures) {
                 upload_texture(*t, true, off);
-                for (auto& l : t->levels) off += l.size() * 4;
+                for (auto& l : upload_levels(*t)) off += l.size() * 4;
             }
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
             return;

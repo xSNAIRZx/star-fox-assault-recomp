@@ -1049,3 +1049,45 @@ line of a buffer filled to the brim -- which a display list sized by a dry run i
 pointer came back to the base with its wrap bit set, `GXEndDisplayList` took that for an
 overflow and returned a size of zero, and every call of the list drew nothing.
 `cp_end_excl` in `gx/fifo.cpp` is the exclusive end the arithmetic uses.
+
+## Enhancements past the console
+
+Three options draw more than the hardware did. All are off unless a frontend asks; the
+desktop frontend takes them as flags.
+
+**Texture filtering** (`render_set_texture_filtering`, `--anisotropy=N`, `--trilinear=1`).
+Anisotropic filtering applies to textures the game filters linearly and that have mip
+levels: the world's surfaces, not the HUD's single-level textures. Trilinear blends between
+mip levels where the game picks the nearest one, again only where it already filters
+linearly, so a font or icon sampled nearest stays as blocky as it was meant to be. Both act
+only when a texture is minified at a slant, so a scene of ships near the camera in space
+changes very little and a floor stretching away changes the most.
+
+**Texture packs** (`gx/texture_pack.h`, `--texture-pack=DIR`, `--texture-dump=DIR`). A
+texture decoded from guest memory is named by `TexData::hash`, which covers its texels at
+every level and the palette entries they use, and so is the same in every run. The dump
+writes each one once as `<hash>.png`; a pack holds replacements under the same names,
+anywhere under its directory. A replacement must have the original's shape at 2, 4 or 8
+times its size; others are refused once, with the reason. The shaders keep the game's own
+size (texture coordinates are divided by the size in the texture image registers), so only
+the detail changes. The uploaded chain runs from the replacement's size down to the
+original's smallest level, and the sampler moves the game's LOD limits down by the extra
+levels (`get_sampler`'s `hd_shift`): a texture the game samples without mips gets just the
+extra levels, so far away it is never blurrier than the original. EFB copies are never
+replaced. Memory the game rewrites under the same shape -- a movie decoded into a texture
+every frame -- is not dumped after its third rewrite, or a cutscene would write hundreds of
+megabytes of frames. PNGs are read by `png_read.cpp` (inflate and the PNG filters, no
+library): non-interlaced, 8 or 16 bits a channel, or a palette.
+
+**Soft particles** (`render_set_soft_particles`, `--soft-particles=1`). In the flat view, a
+draw that only adds light -- blending with a destination factor of one, depth tested but
+not written, in perspective, with no Z freeze, Z texture or constant destination alpha --
+fades out over a fraction of its own distance (5%) where it meets what is behind it, instead
+of cutting a hard edge through walls and the ground. A shadow or decal darkens or replaces
+and is never touched. The draw reads a copy of the depth drawn so far (a program cannot read
+the buffer it is drawn into), blitted before the first soft draw of a frame and again before
+a later one if a draw has written depth since, at most eight times a frame, on texture unit
+16; a GL with only the 16 units 3.3 promises leaves the option off. Both depths go back to
+view space through the vertex shader's own terms: window depth is
+`0.5 * (u_vp_b.x + u_vp_b.y * cz / cw) + 0.5`, with `cz` and `cw` linear in view z through
+`u_zproj`. `GCN_SOFT_RANGE` changes the fraction.

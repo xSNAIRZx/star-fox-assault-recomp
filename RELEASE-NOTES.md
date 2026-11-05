@@ -1,3 +1,28 @@
+# Unreleased — 2026-11-05 HD enhancements
+
+All off by default; Systems & Controls has an HD Enhancements section and an
+"Apply HD preset" button (4x resolution, 16x anisotropic filtering, trilinear, sharp).
+
+- **Anisotropic filtering** (`--anisotropy=2|4|8|16`) and **trilinear mips**
+  (`--trilinear=1`) for textures the game already filters linearly with mip levels.
+  They act where a surface is seen at a slant and minified; in the first mission's
+  space battle (ships near the camera, no ground) captures changed by under 0.1% of
+  pixels. Not yet checked on a ground or interior scene.
+- **HD texture packs** (`--texture-pack=DIR`, `--texture-dump=DIR`). Mod Library can
+  dump the game's textures while playing (`user-data\texture-dump`, named by content
+  hash) and install a pack ZIP of `<hash>.png` replacements at 2, 4 or 8 times the
+  original size (`user-data\hd-textures`, previous pack kept). Replacements of any
+  other shape are refused with a logged reason. Textures the game rewrites every frame
+  (movies) are not dumped. No pack is included: game textures are not redistributable,
+  so packs are made from your own dump.
+- **Soft particles (experimental)** (`--soft-particles=1`): additive effects fade where
+  they meet geometry behind them. In the space battle this mostly dims glow cards laid
+  across the ships' hulls, so it is not part of the HD preset.
+- Higher polygon counts are not possible from the renderer: the models are the game's
+  own data. Verified in the first mission with the same scripted input: a marked test
+  pack replaced 115 of 117 textures with correct mapping; no frame took over 50 ms in
+  any variant.
+
 # Unreleased — 2026-11-05 native builder
 
 Measured on a 16-core/32-thread desktop with the cached SDL2 and build tools:

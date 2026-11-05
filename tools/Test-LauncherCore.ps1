@@ -13,7 +13,9 @@ function Assert-True([bool]$condition, [string]$name) { Assert-Equal $true $cond
 
 # --- Settings defaults and normalisation ---
 $defaults = Get-LauncherSettingDefaults
-Assert-Equal 14 $defaults.Count 'schema covers every profile key'
+Assert-Equal 19 $defaults.Count 'schema covers every profile key'
+Assert-Equal '0' $defaults.anisotropy 'HD enhancements default off'
+Assert-Equal $false $defaults.softParticles 'soft particles default off'
 Assert-Equal 2.0 $defaults.scale 'default scale'
 Assert-Equal 'original' $defaults.aspect 'default aspect'
 Assert-Equal 100 $defaults.volume 'default volume'
@@ -55,6 +57,31 @@ Assert-Equal 7 (Get-LauncherSettingAllowed 'deadzone').Count 'deadzone choices m
 
 Assert-Equal @('--scale=1.5','--aspect=stretch','--aa=fxaa','--filter=smooth') (Get-NativeGraphicsArgumentList 1.5 'stretch' 'fxaa' 'smooth') 'graphics arguments'
 Assert-Equal @('--scale=2','--aspect=original','--aa=off','--filter=sharp') (Get-NativeGraphicsArgumentList 9 'bad' $null '') 'graphics arguments fall back to defaults'
+
+# --- HD enhancements ---
+Assert-Equal 5 (Get-LauncherSettingAllowed 'anisotropy').Count 'anisotropy choices match the Settings page'
+Assert-Equal '0' (ConvertTo-LauncherSettingValue 'anisotropy' '3') 'anisotropy outside the list falls back'
+Assert-Equal '16' (ConvertTo-LauncherSettingValue 'anisotropy' 16) 'numeric anisotropy accepted'
+$preset = Get-HdPresetSettings
+Assert-Equal 4.0 $preset.scale 'HD preset uses 4x'
+Assert-Equal '16' $preset.anisotropy 'HD preset uses 16x anisotropy'
+foreach ($key in $preset.Keys) { Assert-Equal $preset[$key] (ConvertTo-LauncherSettingValue $key $preset[$key]) "HD preset $key is a valid setting" }
+$none = Get-NativeEnhancementArgumentList (Get-LauncherSettingDefaults) '' ''
+Assert-Equal 0 $none.Count 'defaults add no runtime flags'
+$packDir = Join-Path ([IO.Path]::GetTempPath()) ('hd pack test ' + [Guid]::NewGuid().ToString('N'))
+[void][IO.Directory]::CreateDirectory($packDir)
+try {
+  $on = Get-LauncherSettingDefaults; $on.anisotropy = '8'; $on.trilinear = $true; $on.softParticles = $true; $on.hdTextures = $true; $on.dumpTextures = $true
+  $flags = Get-NativeEnhancementArgumentList $on $packDir 'D:\dump dir'
+  Assert-Equal @('--anisotropy=8','--trilinear=1','--soft-particles=1',('--texture-pack="' + $packDir + '"'),'--texture-dump="D:\dump dir"') $flags 'every enhancement flag, paths quoted'
+  $flags = Get-NativeEnhancementArgumentList $on (Join-Path $packDir 'missing') ''
+  Assert-True (-not ($flags -match 'texture-pack')) 'a missing pack folder is not passed'
+} finally { Remove-Item -LiteralPath $packDir -Recurse -Force }
+Assert-True (Test-HdTextureName '0123456789abcdef.png') 'hash name accepted'
+Assert-True (Test-HdTextureName '0123456789ABCDEF.PNG') 'hash name accepted without case'
+Assert-True (-not (Test-HdTextureName 'tex_12.png')) 'dump-by-id name refused'
+Assert-True (-not (Test-HdTextureName '0123456789abcdef.png.exe')) 'other extension refused'
+Assert-True (-not (Test-HdTextureName '..\0123456789abcdef.png')) 'path refused'
 
 # --- Argument quoting (CommandLineToArgvW rules) ---
 Assert-Equal '"C:\Games\SFA.iso"' (ConvertTo-NativeArgument 'C:\Games\SFA.iso') 'plain path quoted'

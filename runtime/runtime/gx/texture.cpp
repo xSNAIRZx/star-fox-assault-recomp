@@ -5,6 +5,7 @@
 #include "gx.h"
 #include "render.h"
 #include "texture.h"
+#include "texture_pack.h"
 #include <cstdlib>
 #include <unordered_map>
 
@@ -246,6 +247,9 @@ struct CacheEntry {
     uint32_t checked_frame;
     uint64_t used[4];          // palette indices the texels reference (CI4, CI8)
     std::vector<Variant> variants;
+    // How often the texels at this address changed under the same shape: a movie or a
+    // picture the game draws into memory every frame, which a texture pack has no use for.
+    uint32_t rewrites = 0;
 };
 static void drop_variants(CacheEntry& e);  // below, with Batch::dead_textures
 struct EfbCopyEntry {
@@ -450,6 +454,7 @@ TexLookup texture_lookup(const TexParams& p, std::vector<std::shared_ptr<TexData
         const uint64_t hsh = hash_bytes(src, total, 0);
         e.checked_frame = g_frame_counter;
         if (e.variants.empty() || hsh != e.hash) {
+            if (!e.variants.empty()) e.rewrites++;
             drop_variants(e);
             e.hash = hsh;
             if (indexed) scan_used_indices(src, total, p.fmt, e.used);
@@ -483,6 +488,8 @@ TexLookup texture_lookup(const TexParams& p, std::vector<std::shared_ptr<TexData
         w = w > 1 ? w / 2 : 1;
         h = h > 1 ? h / 2 : 1;
     }
+    // Texture packs: the dump, and a larger replacement if the pack has this texture.
+    texture_pack_apply(*td, e.rewrites >= 3);
     e.variants.push_back({pal_hash, td});
     new_textures.push_back(td);
     // GCN_TEXLOG=1 reports every texture decoded: where it came from, its shape, and how

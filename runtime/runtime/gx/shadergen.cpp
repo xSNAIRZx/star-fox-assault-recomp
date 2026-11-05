@@ -437,7 +437,12 @@ std::string gen_pixel_shader(const ShaderKey& k) {
     s += GCN_GLSL_VERSION;
     s += "in vec4 v_col0;\nin vec4 v_col1;\nin vec3 v_tex[8];\n";
     s += "in vec2 v_fogz;\n";
-    if (k.fg_depth) s += "in vec2 v_gdepth;\nuniform int u_vr;\nuniform vec4 u_vp_b;\n";
+    if (k.fg_depth) s += "in vec2 v_gdepth;\n";
+    if (k.fg_depth || k.soft) s += "uniform int u_vr;\nuniform vec4 u_vp_b;\n";
+    // Soft particles: a copy of the scene's depth so far (unit 16), how far behind it the
+    // draw fades in, as a fraction of its own distance, and the game's projection's depth
+    // terms, the vertex shader's own, to turn both depths back into view-space distances.
+    if (k.soft) s += "uniform sampler2D u_softdepth;\nuniform float u_soft;\nuniform vec4 u_zproj;\n";
     s += "uniform sampler2D u_tex[8];\n";
     // The palettes EFB copies are read through (efb_pal_mask), on units 8-15.
     if (k.efb_pal_mask) s += "uniform sampler2D u_pal[8];\n";
@@ -817,6 +822,21 @@ std::string gen_pixel_shader(const ShaderKey& k) {
         s += "  gl_FragDepth = float(ztexel & 0xFFFFFF) / 16777215.0;\n";
     }
     s += "  o_color = vec4(outc) / 255.0;\n";
+    // Soft particles (ShaderKey::soft), in the flat view only. Both depths go back to view
+    // space the way the vertex shader made them: window depth is 0.5 * (u_vp_b.x + u_vp_b.y
+    // * cz / cw) + 0.5, with cz and cw linear in view z through u_zproj. The draw fades from
+    // nothing where it touches the scene to full strength a set fraction of its own distance
+    // in front of it. It is additive, so scaling what it adds is the whole fade.
+    if (k.soft) {
+        W("  if (u_vr == 0 && abs(u_vp_b.y) > 1e-9) {\n"
+          "    float soft_scene = texelFetch(u_softdepth, ivec2(gl_FragCoord.xy), 0).r;\n"
+          "    float rf = ((2.0 * %s - 1.0) - u_vp_b.x) / u_vp_b.y;\n"
+          "    float rs = ((2.0 * soft_scene - 1.0) - u_vp_b.x) / u_vp_b.y;\n"
+          "    float zf = (rf * u_zproj.w - u_zproj.y) / (u_zproj.x - rf * u_zproj.z);\n"
+          "    float zs = (rs * u_zproj.w - u_zproj.y) / (u_zproj.x - rs * u_zproj.z);\n"
+          "    o_color *= clamp((zf - zs) / max(u_soft * abs(zf), 1e-4), 0.0, 1.0);\n"
+          "  }\n", fragz);
+    }
     // The constant destination alpha (dst_alpha_mode): stored in place of the TEV's,
     // which the blend then reads from the second output.
     if (k.dst_alpha == 2) s += "  o_src1 = o_color;\n";

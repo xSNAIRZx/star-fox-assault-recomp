@@ -43,7 +43,7 @@ Main weak spots: every control is placed with absolute coordinates (now in 96-DP
 - [x] Fall back to Segoe UI Semibold when Bahnschrift is not installed.
 - [ ] Keyboard and controller navigation: focus rings, tab order, Enter/Esc on dialogs, D-pad/A/B.
 - [ ] Crash Reports: flag sessions whose `.err` has `[guard]`/`[vertcheck]`, summarise the line, offer a redacted bundle (no paths, saves or RAM) for an issue.
-- [ ] Settings presets: Original (4:3, Sharp, AA off), Crisp HD (4x, Sharp), Widescreen (experimental). Matches ROADMAP item 2.
+- [ ] Settings presets: Original (4:3, Sharp, AA off), Crisp HD (4x, Sharp), Widescreen (experimental). Matches ROADMAP item 2. Partly done: an "Apply HD preset" button (4x, 16x anisotropic, trilinear, sharp) in the HD Enhancements section; Original and Widescreen presets are not added yet.
 
 ## Tier 3 — Architecture and maintainability
 

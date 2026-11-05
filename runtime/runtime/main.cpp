@@ -7,6 +7,7 @@
 #include "input_map.h"
 #include "gx/render_gl.h"
 #include "gx/gl.h"
+#include "gx/texture_pack.h"
 #include "hw/pad.h"
 #include "vr_game.h"
 #include "telemetry.h"
@@ -352,6 +353,13 @@ int main(int argc, char** argv) {
     bool fxaa = false, test_graphics = false, sharp = true;
     int vsync = 0, volume = 100;
     bool fullscreen = false;
+    // --anisotropy=N and --trilinear=0|1: texture filtering past what the game asks for
+    // (render_set_texture_filtering). Both off by default, as the console draws.
+    int anisotropy = 0;
+    bool trilinear = false;
+    bool soft_particles = false;  // --soft-particles=0|1 (render_set_soft_particles)
+    const char* texture_pack_dir = nullptr;
+    const char* texture_dump_dir = nullptr;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--log-all")) for (auto& e : g_log_enabled) e = true;
         else if (!strncmp(argv[i], "--log=", 6)) {
@@ -410,6 +418,26 @@ int main(int argc, char** argv) {
             else if (!strcmp(argv[i] + 9, "smooth")) sharp = false;
             else { fprintf(stderr, "--filter expects sharp or smooth\n"); return 1; }
         }
+        else if (!strncmp(argv[i], "--anisotropy=", 13)) {
+            if (!parse_integer_option(argv[i] + 13, 0, 16, anisotropy) ||
+                (anisotropy > 1 && (anisotropy & (anisotropy - 1)))) {
+                fprintf(stderr, "--anisotropy expects 0 (off), 2, 4, 8 or 16\n"); return 1;
+            }
+        }
+        else if (!strncmp(argv[i], "--soft-particles=", 17)) {
+            int on = 0;
+            if (!parse_integer_option(argv[i] + 17, 0, 1, on)) { fprintf(stderr, "--soft-particles expects 0 or 1\n"); return 1; }
+            soft_particles = on != 0;
+        }
+        else if (!strncmp(argv[i], "--trilinear=", 12)) {
+            int on = 0;
+            if (!parse_integer_option(argv[i] + 12, 0, 1, on)) { fprintf(stderr, "--trilinear expects 0 or 1\n"); return 1; }
+            trilinear = on != 0;
+        }
+        // Texture packs (gx/texture_pack.h): replacements by content hash, and the dump that
+        // writes each texture out under the name a replacement takes.
+        else if (!strncmp(argv[i], "--texture-pack=", 15)) texture_pack_dir = argv[i] + 15;
+        else if (!strncmp(argv[i], "--texture-dump=", 15)) texture_dump_dir = argv[i] + 15;
         else if (!strncmp(argv[i], "--deadzone=", 11)) {
             if (!parse_integer_option(argv[i] + 11, 0, 40, g_deadzone_percent)) {
                 fprintf(stderr, "--deadzone expects 0 to 40, the percent of stick travel that reads as nothing\n"); return 1;
@@ -557,6 +585,10 @@ int main(int argc, char** argv) {
     fprintf(stderr, "display pixels: window=%dx%d drawable=%dx%d\n", window_w, window_h, drawable_w, drawable_h);
     float active_scale = scale == 0.0f ? gx::display_auto_scale(drawable_w, drawable_h, aspect) : scale;
     gx::render_set_display_options(aspect, fxaa, sharp);
+    gx::render_set_texture_filtering(anisotropy, trilinear);
+    gx::render_set_soft_particles(soft_particles);
+    gx::texture_pack_set_dir(texture_pack_dir);
+    gx::texture_pack_set_dump_dir(texture_dump_dir);
     gx::render_init(active_scale);
     fprintf(stderr, "graphics: OpenGL, aspect=%s, aa=%s, filter=%s, scale=%.2f%s\n",
             aspect_name, fxaa ? "fxaa" : "off", sharp ? "sharp" : "smooth", active_scale,
