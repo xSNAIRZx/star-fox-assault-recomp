@@ -508,6 +508,9 @@ so the variants never mix with the real ones).
 - Build with `-DGCN_TRACE_CALLS=ON` to keep a real guest call stack, printed by the crash
   dump (`GCN_TRACE_DEPTH` sets how many frames). Compiling with `-DGCN_WATCH` adds
   `GCN_COUNT=addr,...` (call counts per function, printed on interrupt),
+  `GCN_THREAD_WATCH_BAD=1` limits a `-DGCN_THREAD_WATCH` build's current-thread store report to values
+  that cannot be a thread pointer (non-null, outside main memory or unaligned), with the float the
+  word decodes to: every thread switch is otherwise a line, which slows a long run several times.
   `GCN_WATCH_ADDR=<hex>` (report every change to that word; a page-mapped address is read
   with `vm_peek32` and is silent until the game maps it) and the store histogram below.
 - `--log-all` enables every log category, including the DSP mailbox and DVD reads (off by

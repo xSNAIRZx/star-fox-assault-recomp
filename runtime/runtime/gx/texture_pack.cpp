@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -102,7 +103,12 @@ std::shared_ptr<const TexHd> load(const std::string& key, const std::filesystem:
     auto hd = std::make_shared<TexHd>();
     std::vector<uint32_t> top;
     std::string why;
-    if (!read_png(file.string().c_str(), kMaxEdge, top, hd->width, hd->height, why)) return refuse(why);
+    const bool dds = lower(file.extension().string()) == ".dds";
+    if (dds) {
+        if (!read_dds(file.string().c_str(), hd->width, hd->height, hd->block_format, hd->blocks, why)) return refuse(why);
+    } else if (!read_png(file.string().c_str(), kMaxEdge, top, hd->width, hd->height, why)) {
+        return refuse(why);
+    }
     const double sx = static_cast<double>(hd->width) / t.width, sy = static_cast<double>(hd->height) / t.height;
     const std::string shape = std::to_string(hd->width) + "x" + std::to_string(hd->height);
     if (sx < 1.5 || sy < 1.5)
@@ -110,6 +116,12 @@ std::shared_ptr<const TexHd> load(const std::string& key, const std::filesystem:
     if (std::fabs(sx - sy) > 0.02 * std::max(sx, sy))
         return refuse("is " + shape + ", not the " + std::to_string(t.width) + "x" + std::to_string(t.height) + " original's shape");
     hd->shift = static_cast<float>(std::log2(std::min(sx, sy)));
+    if (dds) {
+        // The file's own mip levels are used as they are.
+        fprintf(stderr, "[texture pack] %s: %ux%u replaced at %ux%u (DDS, %zu level(s))\n", key.c_str(), t.width, t.height,
+                hd->width, hd->height, hd->blocks.size());
+        return hd;
+    }
     // Levels down to about the original's smallest: the extra top ones, then one for each of
     // the game's own.
     const size_t want = static_cast<size_t>(std::ceil(hd->shift - 0.01f)) + std::max<size_t>(1, t.levels.size());
@@ -141,6 +153,62 @@ const std::filesystem::path* find_replacement(const TexData& t, const TexSource*
 }
 
 }  // namespace
+
+bool read_dds(const char* path, uint32_t& width, uint32_t& height, uint32_t& block_format,
+              std::vector<std::vector<uint8_t>>& levels, std::string& why) {
+    FILE* f = fopen(path, "rb");
+    if (!f) { why = "cannot open"; return false; }
+    std::vector<uint8_t> file;
+    uint8_t buf[65536];
+    for (size_t got; (got = fread(buf, 1, sizeof(buf), f)) > 0;) {
+        file.insert(file.end(), buf, buf + got);
+        if (file.size() > (512u << 20)) { fclose(f); why = "file too large"; return false; }
+    }
+    fclose(f);
+    auto le32 = [&](size_t o) { return uint32_t(file[o]) | uint32_t(file[o + 1]) << 8 | uint32_t(file[o + 2]) << 16 | uint32_t(file[o + 3]) << 24; };
+    // "DDS ", then the 124-byte header: height at +12, width at +16, mip count at +28, the pixel
+    // format at +76 (flags +80, FourCC +84); "DX10" adds a 20-byte header with the DXGI format.
+    if (file.size() < 128 || memcmp(file.data(), "DDS ", 4) != 0 || le32(4) != 124) { why = "not a DDS file"; return false; }
+    height = le32(12); width = le32(16);
+    const uint32_t mips = std::max<uint32_t>(1, le32(28));
+    const uint32_t pf_flags = le32(80);
+    size_t data = 128;
+    block_format = 0;
+    if (pf_flags & 0x4) {  // DDPF_FOURCC
+        const uint32_t fourcc = le32(84);
+        if (fourcc == 0x31545844) block_format = kTexBlockBC1;       // DXT1
+        else if (fourcc == 0x33545844) block_format = kTexBlockBC2;  // DXT3
+        else if (fourcc == 0x35545844) block_format = kTexBlockBC3;  // DXT5
+        else if (fourcc == 0x30315844) {                             // DX10
+            if (file.size() < 148) { why = "truncated DX10 header"; return false; }
+            const uint32_t dxgi = le32(128);
+            data = 148;
+            if (dxgi == 70 || dxgi == 71 || dxgi == 72) block_format = kTexBlockBC1;
+            else if (dxgi == 73 || dxgi == 74 || dxgi == 75) block_format = kTexBlockBC2;
+            else if (dxgi == 76 || dxgi == 77 || dxgi == 78) block_format = kTexBlockBC3;
+            else if (dxgi == 97 || dxgi == 98 || dxgi == 99) block_format = kTexBlockBC7;
+            else { why = "DXGI format " + std::to_string(dxgi) + " is not BC1, BC2, BC3 or BC7"; return false; }
+        }
+    }
+    if (!block_format) { why = "not block-compressed (BC1, BC2, BC3 or BC7)"; return false; }
+    if (!width || !height || width > kMaxEdge || height > kMaxEdge) { why = "bad size"; return false; }
+    const uint32_t block_bytes = block_format == kTexBlockBC1 ? 8 : 16;
+    levels.clear();
+    uint32_t w = width, h = height;
+    for (uint32_t l = 0; l < mips; l++) {
+        const size_t size = static_cast<size_t>(std::max(1u, (w + 3) / 4)) * std::max(1u, (h + 3) / 4) * block_bytes;
+        if (data + size > file.size()) {
+            if (levels.empty()) { why = "truncated image data"; return false; }
+            break;  // keep the levels that are whole
+        }
+        levels.emplace_back(file.begin() + static_cast<long>(data), file.begin() + static_cast<long>(data + size));
+        data += size;
+        if (w == 1 && h == 1) break;
+        w = w > 1 ? w / 2 : 1;
+        h = h > 1 ? h / 2 : 1;
+    }
+    return true;
+}
 
 std::string dolphin_texture_name(const TexSource& s, bool mipmapped, int wildcard) {
     const uint64_t tex = xxh64(s.texels, s.base_bytes, 0);
@@ -176,9 +244,12 @@ std::string dolphin_texture_name(const TexSource& s, bool mipmapped, int wildcar
 void texture_pack_set_dir(const char* dir) {
     g_pack.clear();
     g_dolphin.clear();
+    // Another pack (or none): what was loaded or refused under a name may differ now.
+    g_loaded.clear();
+    g_refused.clear();
     if (!dir || !*dir) return;
     std::error_code ec;
-    size_t ours = 0, dolphin = 0, dds = 0;
+    size_t ours = 0, dolphin = 0;
     for (auto it = std::filesystem::recursive_directory_iterator(dir, ec);
          !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
         if (!it->is_regular_file(ec)) continue;
@@ -186,14 +257,12 @@ void texture_pack_set_dir(const char* dir) {
         const std::string stem = it->path().stem().string();
         uint64_t hash;
         std::string name;
-        if (ext == ".dds") { if (lower(stem).rfind("tex1_", 0) == 0) dds++; continue; }
-        if (ext != ".png") continue;
+        if (ext != ".png" && ext != ".dds") continue;
         if (parse_hash_name(stem, hash)) { g_pack[hash] = it->path(); ours++; }
         else if (parse_dolphin_name(stem, name)) { g_dolphin.emplace(name, it->path()); dolphin++; }
     }
     if (ec) fprintf(stderr, "[texture pack] could not read %s: %s\n", dir, ec.message().c_str());
     fprintf(stderr, "[texture pack] %zu replacement(s) by hash and %zu by Dolphin name in %s\n", ours, dolphin, dir);
-    if (dds) fprintf(stderr, "[texture pack] %zu DDS file(s) skipped: only PNG replacements are read so far\n", dds);
 }
 
 void texture_pack_set_dump_dir(const char* dir) {

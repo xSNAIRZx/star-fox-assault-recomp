@@ -43,6 +43,7 @@ $requiredFiles = @(
 $archive = $null
 $manifestTable = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::Ordinal)
 $archiveFiles = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
+$skippedDocs = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
 $applied = New-Object 'System.Collections.Generic.List[object]'
 $status = 'failed'
 $rolledBack = $false
@@ -50,6 +51,18 @@ $failureText = $null
 $changedCount = 0
 $backupReady = $false
 
+# A documentation file a later package adds where this installer has no rule for it (a new
+# docs folder, say). It is checked against the manifest like any other file but not
+# installed, so a newer package's documentation does not stop the update: an installer that
+# rejected unknown documentation outright left older installs unable to update at all.
+function Test-SkippableDoc([string]$path) {
+  if ([string]::IsNullOrWhiteSpace($path) -or $path.Contains([char]0)) { return $false }
+  $normalized = $path.Replace('\','/')
+  if ($normalized.StartsWith('/') -or $normalized.Contains(':')) { return $false }
+  if (@($normalized.Split('/') | Where-Object { $_ -eq '' -or $_ -eq '.' -or $_ -eq '..' }).Count -gt 0) { return $false }
+  if ($normalized -match '(^|/)(\.git|\.claude|\.githooks|analysis|orig|build-native|userdata|user-data|saves|reference-metadata|build-desktop|tools|runtime|recomp|decomp)(/|$)') { return $false }
+  return [IO.Path]::GetExtension($normalized).ToLowerInvariant() -in @('.md','.txt','.png','.jpg','.svg')
+}
 function Test-UpdatePath([string]$path) {
   if ([string]::IsNullOrWhiteSpace($path) -or $path.Contains([char]0)) { return $false }
   $normalized = $path.Replace('\','/')
@@ -79,6 +92,8 @@ function Test-UpdatePath([string]$path) {
     }
     '^tools/([A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+$' { return $extension -in @('.ps1','.psd1','.cs','.py','.txt','.sh','.cmd','.bat') }
     '^third_party_licenses/[A-Za-z0-9_.-]+\.txt$' { return $true }
+    '^docs/([A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(md|txt|png)$' { return $true }
+    '^[A-Za-z0-9_.-]+\.md$' { return $true }
     default { return $false }
   }
 }
@@ -164,7 +179,10 @@ try {
       if (-not (Test-UpdatePath $dirName)) { throw "Unsafe package directory: $rawName" }
       continue
     }
-    if (-not (Test-UpdatePath $name)) { throw "Package contains a path or file outside the update schema: $rawName" }
+    if (-not (Test-UpdatePath $name)) {
+      if (-not (Test-SkippableDoc $name)) { throw "Package contains a path or file outside the update schema: $rawName" }
+      [void]$skippedDocs.Add($name)
+    }
     if (((($entry.ExternalAttributes -shr 16) -band 0xF000) -eq 0xA000)) { throw "Package contains a symlink: $name" }
     if ($archiveFiles.ContainsKey($name)) { throw "Duplicate or case-colliding package path: $name" }
     $totalExpanded += [long]$entry.Length
@@ -178,7 +196,7 @@ try {
   foreach ($line in ($manifestText -split "`r?`n" | Where-Object { $_ -ne '' })) {
     if ($line -notmatch '^([A-Fa-f0-9]{64})  (.+)$') { throw 'SHA256SUMS.txt contains an invalid line.' }
     $relative = $Matches[2]
-    if ($relative -ceq $manifestName -or -not (Test-UpdatePath $relative)) { throw "Manifest path is not allowed: $relative" }
+    if ($relative -ceq $manifestName -or -not ((Test-UpdatePath $relative) -or (Test-SkippableDoc $relative))) { throw "Manifest path is not allowed: $relative" }
     if ($manifestTable.ContainsKey($relative)) { throw "Duplicate manifest path: $relative" }
     $manifestTable.Add($relative,$Matches[1].ToLowerInvariant())
   }
@@ -194,6 +212,7 @@ try {
 
   [IO.Directory]::CreateDirectory($payloadRoot) | Out-Null
   foreach ($name in $archiveFiles.Keys) {
+    if ($skippedDocs.Contains($name)) { continue }
     $entry = $archiveFiles[$name]
     if ($name -ceq $manifestName) { $relative = $manifestName } else { $relative = $name }
     $destination = Get-UpdateFullPath $payloadRoot $relative
@@ -209,7 +228,7 @@ try {
   if ($liveInstall -and (Get-Process -Name assault -ErrorAction SilentlyContinue)) { throw 'The native game started while the update was being prepared; no files were replaced.' }
   [IO.Directory]::CreateDirectory($backupRoot) | Out-Null
   $backupReady = $true
-  $orderedNames = @($archiveFiles.Keys | Sort-Object)
+  $orderedNames = @($archiveFiles.Keys | Where-Object { -not $skippedDocs.Contains($_) } | Sort-Object)
   try {
     foreach ($name in $orderedNames) {
       $destination = Get-UpdateFullPath $targetRoot $name
@@ -260,6 +279,7 @@ try {
 
   $status = 'installed'
   $failureText = 'Update applied. Previous application files are retained in the backup folder; settings and user data were not included in the replacement set.'
+  if ($skippedDocs.Count) { $failureText += (' {0} documentation file(s) this installer has no rule for were checked and left out.' -f $skippedDocs.Count) }
   Write-UpdateLog $status $failureText
   $result = [pscustomobject]@{ Status=$status; Package=[IO.Path]::GetFileName($archivePath); FilesChanged=$changedCount; BackupPath=$backupRoot; LogPath=$logPath; Message=$failureText }
   Write-ResultFile $result

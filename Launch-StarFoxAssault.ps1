@@ -1818,7 +1818,7 @@ function Install-HdTexturePack([string]$zipPath) {
         $count++
       }
     } finally { $archive.Dispose() }
-    if (-not $count) { throw 'No textures were found. An HD pack holds PNGs named by texture hash (0123456789abcdef.png, as the dump names them) or by Dolphin (tex1_....png). DDS packs are not supported yet.' }
+    if (-not $count) { throw 'No textures were found. An HD pack holds PNGs named by texture hash (0123456789abcdef.png, as the dump names them) or by Dolphin (tex1_....png).' }
     @{ name = [IO.Path]::GetFileNameWithoutExtension($zipPath); files = $count; installed = (Get-Date).ToString('s') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'pack.json') -Encoding utf8
     $previous = Join-Path $script:hdTextureRoot 'previous'
     if (Test-Path -LiteralPath $script:hdTextureDir) {
@@ -2027,7 +2027,7 @@ function Build-ModsPage {
   # HD texture packs for the native build (runtime gx/texture_pack.h).
   $hdCard=New-Card 30 680 $pageWidth 200
   $h=New-Label 'HD TEXTURE PACK (NATIVE)' 9 $true $script:colors.cyan; $h.Location=New-Object Drawing.Point(22,17); $hdCard.Controls.Add($h)
-  $hd=New-Label 'PNGs named by texture hash (from the dump) or Dolphin-style tex1_ names, at a whole multiple of the original size: Dolphin HD packs for this game install as they are (PNG only, not DDS). Switch the pack on in Systems & Controls.' 9 $false $script:colors.muted
+  $hd=New-Label 'PNGs named by texture hash (from the dump) or Dolphin-style tex1_ names, at a whole multiple of the original size: Dolphin HD packs for this game install as they are (PNG or DDS). Switch the pack on in Systems & Controls.' 9 $false $script:colors.muted
   $hd.Location=New-Object Drawing.Point(22,42); $hd.MaximumSize=New-Object Drawing.Size(($pageWidth - 48),0); $hdCard.Controls.Add($hd)
   $script:dumpTexturesCheck=New-Object Windows.Forms.CheckBox; $script:dumpTexturesCheck.Text='Dump textures while playing (to user-data\texture-dump)'; $script:dumpTexturesCheck.AutoSize=$true
   $script:dumpTexturesCheck.Location=New-Object Drawing.Point(22,88); $script:dumpTexturesCheck.ForeColor=$script:colors.text; $script:dumpTexturesCheck.BackColor=[Drawing.Color]::Transparent; $script:dumpTexturesCheck.Checked=[bool]$script:dumpTexturesValue

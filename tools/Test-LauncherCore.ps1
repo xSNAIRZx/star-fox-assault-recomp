@@ -95,7 +95,8 @@ Assert-True (Test-HdTextureName 'tex1_608x448_3350bc351be222ba_0a5410ad0d30eae2_
 Assert-True (Test-HdTextureName 'tex1_64x64_m_0123456789abcdef_14.png') 'Dolphin mipmapped name accepted'
 Assert-True (Test-HdTextureName 'tex1_32x32_0123456789abcdef_$_8_arb.png') 'Dolphin wildcard and arb accepted'
 Assert-True (Test-HdTextureName 'TEX1_32x32_$_0123456789abcdef_9_mip1.PNG') 'Dolphin texture wildcard and mip accepted'
-Assert-True (-not (Test-HdTextureName 'tex1_32x32_0123456789abcdef_8.dds')) 'DDS not taken (the runtime reads PNG)'
+Assert-True (Test-HdTextureName 'tex1_32x32_0123456789abcdef_8.dds') 'Dolphin DDS accepted'
+Assert-True (-not (Test-HdTextureName '0123456789abcdef.dds')) 'DDS only under Dolphin names'
 Assert-True (-not (Test-HdTextureName 'tex1_32x32_nothex_8.png')) 'bad Dolphin hash refused'
 
 # --- Argument quoting (CommandLineToArgvW rules) ---

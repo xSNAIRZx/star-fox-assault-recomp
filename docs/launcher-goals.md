@@ -62,7 +62,7 @@ Main weak spots: every control is placed with absolute coordinates (now in 96-DP
 - [x] Keep CI-built launcher, inspector and package with SHA-256 as a workflow artifact.
 - [ ] Stop committing `Star Fox Assault Recomp.exe`: attach the CI-built exe to releases instead. The package and updater required-file lists name it at the repo root, so change them together.
 - [ ] Authenticate updates: sign `release.json` (minisign or a code-signing certificate) and verify before installing a local ZIP.
-- [ ] Fix the old-updater dead end (older updaters reject new doc paths): skip unknown docs instead of failing, or show a one-time migration note.
+- [x] Fix the old-updater dead end (older updaters reject new doc paths): skip unknown docs instead of failing, or show a one-time migration note. This installer now skips unknown documentation (still hash-checked) and accepts `docs/`; installers already shipped keep the old rule, so layout changes wait until rc.4 ships it.
 - [x] Add a GitHub bug-report form with the roadmap's fields.
 - [ ] Tidy the repo root: move `README-PROTOTYPE.txt`, `RELEASE-READINESS.md` and `VALIDATION.md` under `docs/`, updating the package and updater allowlists.
 - [ ] Record a pinned upstream source for the replacement font bytes in `THIRD_PARTY_NOTICES.md`.

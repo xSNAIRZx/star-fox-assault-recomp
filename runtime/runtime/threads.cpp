@@ -719,11 +719,18 @@ extern "C" void debug_current_thread_store(CPU* c, uint32_t pc, uint32_t ea) {
         return value && strtoul(value, nullptr, 16) == 0x800000E4u;
     }();
     if (!enabled) return;
+    // GCN_THREAD_WATCH_BAD=1 reports only a value that cannot be a thread pointer, as the guard
+    // does (gcn_guard_should_report): every thread switch is otherwise a line, which slows a
+    // long hunting run several times over and buries the one store that matters.
+    static const bool bad_only = [] { const char* e = getenv("GCN_THREAD_WATCH_BAD"); return e && atoi(e) != 0; }();
     static uint32_t last = 0xFFFFFFFFu;
     const uint32_t current = mem_r32(0x800000E4u);
     if (current == last) return;
-    fprintf(stderr, "[thread-watch] 800000E4: %08X -> %08X at store %08X (lr %08X)\n",
-            last, current, pc, c ? c->lr : 0);
+    if (bad_only && !gcn_guard_should_report(current)) { last = current; return; }
+    char note[96];
+    const char* why = gcn_word_pointer_note(current, note, sizeof note);
+    fprintf(stderr, "[thread-watch] 800000E4: %08X -> %08X at store %08X (lr %08X)%s%s\n",
+            last, current, pc, c ? c->lr : 0, why ? " " : "", why ? why : "");
     char stack[192];
     const char* chain = guest_stack_line(stack, sizeof stack);
     if (chain) fprintf(stderr, "[thread-watch]   live guest stack: %s\n", chain);

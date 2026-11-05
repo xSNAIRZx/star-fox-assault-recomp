@@ -1,3 +1,17 @@
+# Unreleased — 2026-11-05 DDS packs, updater, crash hunting
+
+- **DDS texture packs**: BC1, BC2, BC3 and BC7 DDS replacements (Dolphin's usual
+  format) are uploaded to the GPU compressed, with the file's own mip levels; Mod
+  Library installs them. A GPU without S3TC/BPTC keeps the original textures.
+  Checked in game with a BC1 pack on the opening screen.
+- **Updater**: a package's documentation files this installer has no rule for are
+  checked against the manifest and skipped instead of stopping the whole update, and
+  `docs/` is accepted. Installers already shipped (rc.2, rc.3) still reject new paths,
+  so the repository layout stays as it is until rc.4 is out.
+- Choosing another texture pack clears the replacements loaded from the last one.
+- **Crash hunting**: `GCN_THREAD_WATCH_BAD=1` makes a diagnostic build report only
+  bad current-thread-pointer stores, so long scripted runs keep full speed.
+
 # Unreleased — 2026-11-05 polish, Dolphin packs, navigation
 
 - **Dolphin HD texture packs** load in the native build: Dolphin's `tex1_` names are

@@ -72,11 +72,11 @@ function Get-NativeEnhancementArgumentList($settings, [string]$hdTextureDir, [st
 # A file an HD texture pack may hold: a texture's 16-hex-digit content hash and .png, as the
 # runtime's texture dump names them, or Dolphin's name for it (tex1_<w>x<h>[_m]_<hash>[_<palette
 # hash>]_<format>, either hash possibly "$", with Dolphin's _arb and _mipN suffixes), so a
-# Dolphin texture pack installs as it is. Anything else in a pack ZIP is ignored; DDS files too,
-# as the runtime reads PNG only.
+# Dolphin texture pack installs as it is: PNG, or DDS for Dolphin's names (BC1/BC2/BC3/BC7).
+# Anything else in a pack ZIP is ignored.
 function Test-HdTextureName([string]$name) {
   if ($name -match '^[0-9A-Fa-f]{16}\.[Pp][Nn][Gg]$') { return $true }
-  return [bool]($name -match '^(?i)tex1_\d+x\d+(_m)?_([0-9a-f]{16}|\$)(_([0-9a-f]{16}|\$))?_\d+(_arb)?(_mip\d+)?\.png$')
+  return [bool]($name -match '^(?i)tex1_\d+x\d+(_m)?_([0-9a-f]{16}|\$)(_([0-9a-f]{16}|\$))?_\d+(_arb)?(_mip\d+)?\.(png|dds)$')
 }
 
 function Get-LauncherSettingDefaults {

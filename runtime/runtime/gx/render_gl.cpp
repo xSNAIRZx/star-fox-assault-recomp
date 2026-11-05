@@ -1368,9 +1368,23 @@ uint64_t render_texture_hash(uint32_t id) {
 
 // `from_pbo`: the texels are in the bound pixel unpack buffer from `pbo_off` on, every level
 // in turn, rather than in `t` (upload_textures).
-// The texels a texture is uploaded from: a texture pack's replacement where it has one.
+// The block-compressed formats this GL takes, for DDS replacements (render_init).
+static bool g_have_s3tc = false, g_have_bptc = false;
+static bool hd_blocks_usable(const TexData& t) {
+#ifdef GCN_GL_ES
+    (void)t;
+    return false;
+#else
+    if (!t.hd || !t.hd->block_format || t.hd->blocks.empty()) return false;
+    return t.hd->block_format == kTexBlockBC7 ? g_have_bptc : g_have_s3tc;
+#endif
+}
+
+// The texels a texture is uploaded from: a texture pack's replacement where it has one. A
+// block-compressed replacement is uploaded on its own (upload_texture); where it cannot be,
+// the game's own texels are used.
 static const std::vector<std::vector<uint32_t>>& upload_levels(const TexData& t) {
-    return t.hd ? t.hd->levels : t.levels;
+    return t.hd && !t.hd->block_format ? t.hd->levels : t.levels;
 }
 
 static void upload_texture(const TexData& t, bool from_pbo = false, size_t pbo_off = 0) {
@@ -1380,9 +1394,28 @@ static void upload_texture(const TexData& t, bool from_pbo = false, size_t pbo_o
     // The game's size, replacement or not: the shaders and EFB-copy bookkeeping work in it.
     g.w = t.width; g.h = t.height;
     g.hash = t.hash;
-    g.hd_shift = t.hd ? t.hd->shift : 0.0f;
+    g.hd_shift = t.hd && !t.hd->block_format ? t.hd->shift : 0.0f;
+#ifndef GCN_GL_ES
+    // A DDS replacement: its blocks and its own mip levels, as the file holds them.
+    if (hd_blocks_usable(t)) {
+        uint32_t bw = t.hd->width, bh = t.hd->height;
+        for (size_t l = 0; l < t.hd->blocks.size(); l++) {
+            glCompressedTexImage2D(GL_TEXTURE_2D, (GLint)l, (GLenum)t.hd->block_format, bw, bh, 0,
+                                   (GLsizei)t.hd->blocks[l].size(), t.hd->blocks[l].data());
+            bw = bw > 1 ? bw / 2 : 1;
+            bh = bh > 1 ? bh / 2 : 1;
+        }
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)t.hd->blocks.size() - 1);
+        g.levels = (uint32_t)t.hd->blocks.size();
+        g.hd_shift = t.hd->shift;
+        g.last_used = g_render_frame;
+        g_textures[t.id] = g;
+        return;
+    }
+#endif
     const auto& levels = upload_levels(t);
-    uint32_t w = t.hd ? t.hd->width : t.width, h = t.hd ? t.hd->height : t.height;
+    const bool hd_texels = t.hd && !t.hd->block_format;
+    uint32_t w = hd_texels ? t.hd->width : t.width, h = hd_texels ? t.hd->height : t.height;
 #ifdef GCN_GL_ES
     // Storage for the whole chain at once, rather than a level at a time into a mutable
     // texture: on an Adreno 740 that also took the first draw from the new textures from
@@ -1534,9 +1567,16 @@ static bool prepare_soft_depth() {
 
 static void init_texture_filtering() {
     g_anisotropy = 0.0f;
-    if (g_anisotropy_wanted <= 1) return;
     GLint n = 0;
     glGetIntegerv(GL_NUM_EXTENSIONS, &n);
+    // Block-compressed formats for DDS replacements (texture_pack.h).
+    for (GLint i = 0; i < n; i++) {
+        const char* e = (const char*)glGetStringi(GL_EXTENSIONS, (GLuint)i);
+        if (!e) continue;
+        if (!strcmp(e, "GL_EXT_texture_compression_s3tc")) g_have_s3tc = true;
+        if (!strcmp(e, "GL_ARB_texture_compression_bptc") || !strcmp(e, "GL_EXT_texture_compression_bptc")) g_have_bptc = true;
+    }
+    if (g_anisotropy_wanted <= 1) return;
     bool have = false;
     for (GLint i = 0; i < n && !have; i++) {
         const char* e = (const char*)glGetStringi(GL_EXTENSIONS, (GLuint)i);

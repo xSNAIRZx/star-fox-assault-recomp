@@ -77,6 +77,40 @@ int main() {
     gx::texture_pack_set_dir(dir.string().c_str());
     gx::texture_pack_apply(other, false, nullptr);
     CHECK(other.hd == nullptr);
+    // DDS: a BC1 (DXT1) 8x8 with two mip levels (4 blocks, then 1), a DX10-header BC7 4x4, and
+    // an uncompressed one, which is refused.
+    auto write_dds = [&](const std::filesystem::path& path, uint32_t w, uint32_t h, uint32_t mips, uint32_t fourcc,
+                         uint32_t dxgi, uint32_t data_bytes, uint32_t pf_flags) {
+        std::vector<uint8_t> f(128 + (fourcc == 0x30315844 ? 20 : 0) + data_bytes, 0);
+        auto put = [&](size_t o, uint32_t v) { for (int i = 0; i < 4; i++) f[o + i] = static_cast<uint8_t>(v >> (8 * i)); };
+        memcpy(f.data(), "DDS ", 4);
+        put(4, 124); put(12, h); put(16, w); put(28, mips); put(80, pf_flags); put(84, fourcc);
+        if (fourcc == 0x30315844) put(128, dxgi);
+        for (size_t i = f.size() - data_bytes; i < f.size(); i++) f[i] = static_cast<uint8_t>(i);
+        FILE* o = fopen(path.string().c_str(), "wb");
+        fwrite(f.data(), 1, f.size(), o);
+        fclose(o);
+    };
+    std::filesystem::create_directories(dir);
+    write_dds(dir / "a.dds", 8, 8, 2, 0x31545844, 0, 4 * 8 + 8, 0x4);
+    uint32_t dw = 0, dh = 0, fmt = 0; std::vector<std::vector<uint8_t>> lv; std::string dwhy;
+    CHECK(gx::read_dds((dir / "a.dds").string().c_str(), dw, dh, fmt, lv, dwhy));
+    CHECK(dw == 8 && dh == 8 && fmt == gx::kTexBlockBC1 && lv.size() == 2 && lv[0].size() == 32 && lv[1].size() == 8);
+    write_dds(dir / "b.dds", 4, 4, 1, 0x30315844, 98, 16, 0x4);
+    CHECK(gx::read_dds((dir / "b.dds").string().c_str(), dw, dh, fmt, lv, dwhy));
+    CHECK(fmt == gx::kTexBlockBC7 && lv.size() == 1 && lv[0].size() == 16);
+    write_dds(dir / "c.dds", 4, 4, 1, 0, 0, 64, 0x41);
+    CHECK(!gx::read_dds((dir / "c.dds").string().c_str(), dw, dh, fmt, lv, dwhy));
+    // A DDS replacement by Dolphin's name: blocks kept as they are, its own levels.
+    std::filesystem::remove_all(dir / "sub");
+    std::filesystem::create_directories(dir / "sub");
+    write_dds(dir / "sub" / (gx::dolphin_texture_name(src, true) + ".dds"), 32, 16, 2, 0x35545844, 0, 8 * 4 * 16 + 4 * 2 * 16, 0x4);
+    std::filesystem::remove(dir / "1111111111111111.png");
+    gx::texture_pack_set_dir(dir.string().c_str());
+    gx::TexData d = t; d.hd.reset(); d.hash = 0x2222222222222222ull;
+    gx::texture_pack_apply(d, false, &src);
+    CHECK(d.hd && d.hd->block_format == gx::kTexBlockBC3 && d.hd->blocks.size() == 2 && d.hd->levels.empty());
+    CHECK(d.hd && d.hd->shift > 1.99f && d.hd->shift < 2.01f);
     std::filesystem::remove_all(dir);
 
     if (g_failures) { fprintf(stderr, "%d failure(s)\n", g_failures); return 1; }

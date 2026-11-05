@@ -119,6 +119,33 @@ Assert-True $hashCaught 'Manifest hash mismatch was accepted.'
 Assert-True (([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($hashCmake))) -ceq 'hash rejection sentinel') 'Hash rejection changed the scratch install.'
 $results.tests.hashRejection = @{ passed=$true; noTargetFilesChanged=$true }
 
+# A newer package's documentation in a place this installer has no rule for is checked against
+# the manifest but left out, instead of stopping the whole update.
+$docZip = Join-Path $testRoot 'unknown-doc.zip'
+Copy-Item -LiteralPath $PackagePath -Destination $docZip
+$docBytes = [Text.Encoding]::UTF8.GetBytes('# A guide a later release adds')
+$docHasher = [Security.Cryptography.SHA256]::Create()
+try { $docHash = [BitConverter]::ToString($docHasher.ComputeHash($docBytes)).Replace('-','').ToLowerInvariant() } finally { $docHasher.Dispose() }
+$docArchive = [IO.Compression.ZipFile]::Open($docZip,[IO.Compression.ZipArchiveMode]::Update)
+try {
+  $entry = $docArchive.CreateEntry('guides/new-guide.md')
+  $stream = $entry.Open(); try { $stream.Write($docBytes,0,$docBytes.Length) } finally { $stream.Dispose() }
+  $manifest = $docArchive.GetEntry('SHA256SUMS.txt')
+  $reader = New-Object IO.StreamReader($manifest.Open()); try { $manifestText = $reader.ReadToEnd() } finally { $reader.Dispose() }
+  $manifest.Delete()
+  $manifest = $docArchive.CreateEntry('SHA256SUMS.txt')
+  $writer = New-Object IO.StreamWriter($manifest.Open(),(New-Object Text.UTF8Encoding($false)))
+  try { $writer.Write($manifestText.TrimEnd("`r","`n") + "`n$docHash  guides/new-guide.md`n") } finally { $writer.Dispose() }
+} finally { $docArchive.Dispose() }
+$docRoot = Join-Path $testRoot 'unknown-doc-install'
+[IO.Directory]::CreateDirectory($docRoot) | Out-Null
+$null = Set-TestFile $docRoot 'CMakeLists.txt' ([Text.Encoding]::UTF8.GetBytes('unknown doc sentinel'))
+$docResult = & $installer -ArchivePath $docZip -TargetRoot $docRoot
+Assert-True ($docResult.Status -eq 'installed') 'An unknown documentation file stopped the update.'
+Assert-True (-not (Test-Path -LiteralPath (Join-Path $docRoot 'guides/new-guide.md'))) 'An unknown documentation file was installed.'
+Assert-True ([string]$docResult.Message -match '1 documentation file') 'The result does not say a documentation file was left out.'
+$results.tests.unknownDocSkipped = @{ passed=$true }
+
 $results.completedUtc = [DateTime]::UtcNow.ToString('o')
 $resultPath = Join-Path $testRoot 'results.json'
 $results | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8

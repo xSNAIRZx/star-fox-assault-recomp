@@ -1071,7 +1071,9 @@ index the top level uses, with `$` standing for either hash in a pack that match
 palette or every texture. Whether the game samples a texture with mips (`_m`) is a sampler
 setting the shared decode does not know, so both spellings are tried. For CI14x2 Dolphin reads
 each index from one byte-swapped byte; that is kept, or its packs would not match. Dolphin's
-`_mipN` files are skipped (the chain is made from the top level) and DDS files are not read.
+`_mipN` files are skipped (the chain is made from the top level). DDS files of BC1, BC2,
+BC3 or BC7 blocks (DXT1/3/5 FourCC or a DX10 header) are uploaded compressed with their own mip
+levels (`read_dds`); a GL without S3TC or BPTC keeps the game's own texels.
 Checked against Dolphin's own dump of a game's paletted textures: every name matched. A
 texture decoded from guest memory is named by `TexData::hash`, which covers its texels at
 every level and the palette entries they use, and so is the same in every run. The dump

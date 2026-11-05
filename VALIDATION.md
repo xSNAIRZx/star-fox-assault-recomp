@@ -258,12 +258,42 @@ user data.
   fidelity and all physical controllers remain unverified.
 - The reported first-boss visibility issue and invalid-current-thread-pointer crash
   remain unresolved. Widescreen remains experimental.
+- A module-reload fault (stale module callbacks reading reused memory) ended a 60,000-frame
+  unpaced attract-loop run on 2026-11-05; see the validation log.
 
 The package excludes game images, extracted DOL/REL files, generated game code,
 prebuilt game executables, local settings, saves and build caches. Each recipient
 provides their own supported game image and builds locally.
 
 ## Validation log
+
+### 2026-11-05 — 60,000-frame thread-watch run; new module-reload fault
+
+A `-DiagnosticBuild` executable ran the first-mission input script, then idled into the attract
+loop, unpaced (`GCN_TIMESCALE=0`) for 30 minutes with `GCN_WATCH_ADDR=800000E4`,
+`GCN_GUARD=800000E4` and the new `GCN_THREAD_WATCH_BAD=1` filter. It reached 60,000 presented
+frames. **No `[thread-watch]` or `[guard]` line was logged**: the current-thread-pointer crash
+did not reproduce in this run, so it remains open and its writer is still unknown.
+
+The run then ended in a different fault: a guest read at `0xC3DB27AE`, a float (about -438.3)
+used as a pointer. The faulting call chain runs from the main loop's task runner into module 12
+(`m9.rel`) code, which read the float out of its own `.bss`. The module link log explains why
+that memory no longer held its data:
+
+| Link | Module | Header | `.bss` |
+|------|--------|--------|--------|
+| 8 | m9 (12) | `815BEBA0` | `814FE4E0` |
+| 9 | m4 (8) | `814E3380`, code to `815355C4` | `81557EC0` |
+| 10-11 | m2, m5 | `815583C0` | — |
+
+m4's code was linked over m9's `.bss` at link 9, yet m9 callbacks were still being run after
+links 10 and 11. No `OSUnlink` is logged in the whole run, so the game frees and reuses module
+memory without the SDK unlink. In the first cycle (links 4-5) m4 did not overlap m9's `.bss`,
+which is consistent with the same stale call having happened harmlessly then. Not yet known:
+whether the game also keeps m9 objects alive this long on hardware, or whether the recompiled
+build frees or loads modules in a different order (unpaced timing is one candidate). Next step:
+log module load, free and the task-list owner per frame around a reload, and compare paced with
+unpaced runs. Not checked: a normal-speed run of the same length.
 
 ### 2026-11-03 — launcher tool audit
 
