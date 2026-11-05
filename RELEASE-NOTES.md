@@ -4,6 +4,10 @@
   paired-sum result flags and preserve copied lanes. Regression coverage includes
   a tiny-vector normalization failure mechanism. The recorded boss encounter is
   still the required gameplay gate; this is not a confirmed boss fix yet.
+- The combined arithmetic candidate now passes the recorded boss-disappearance
+  replay: a visible boss and finite object state replace the baseline infinities
+  and NaNs. Fresh live confirmation and boss completion are paused/pending; no
+  full-game release claim is made.
 - Restore the second packed single-precision PSF context lane correctly, while
   keeping PS0's dedicated double-precision value. This is a tested context-reader
   correction, not a verified fix for the reported pointer crash.

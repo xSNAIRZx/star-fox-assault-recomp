@@ -2,6 +2,33 @@
 
 ## Continued correctness and controls work — 2026-11-04
 
+### Recorded boss replay: candidate passes; live run pending
+
+The NI + paired-sum candidate replay reached the selected after frame with the
+Winged Aparoid visibly present. Its entire 0x180-byte boss object at the before
+frame was byte-identical to the baseline. At the after frame, the same object,
+actor, generation and phase remained valid in both runs. The baseline had eight
+non-finite values among 26 identified float fields; the candidate had zero. Its
+position was approximately (-5.0098, -16.1077, 130), rather than infinities.
+No replay-divergence warning was reported. Candidate RAM at submitted 29995
+mapped to presented 29994; the independently inspected PNG was presented 29995.
+
+This is evidence that the combined arithmetic candidate prevents this recorded
+failure. It excludes the later packed-context fix. The private log-only trace
+build was SHA-256 `24632ede513f1f4359512bebb164feec58c5124a4fbce8b7f6c48209d0fc47c5`.
+Its normalizer log filter missed an intervening wrapper, so absence of those log
+lines does not prove active NI mode or which guarded path ran. The RAM/PNG result
+does not rely on that trace. NI-only causal attribution remains narrower than the
+combined-candidate result.
+
+Both baseline and candidate replay were stopped at their 620-second test bounds;
+neither was a mission-completion run. The work is paused immediately before the
+fresh live run at the user's request. Next: live-test the clean build through the
+meteor attack and boss completion, then save/reload; keep the pointer crash and
+later-mission checks open. The clean source with the separate context correction
+also rebuilt and passed the full Windows host checks. Hosted Windows and Linux
+CI passed commit `97651e7ddd29f21b9ca861d4c7695057d2c213e1`.
+
 The reproduced boss object's position offsets become infinities while its actor
 and generation remain valid. The recorded route reproduced this transition in a
 same-build replay with no reported divergence through the selected snapshots:

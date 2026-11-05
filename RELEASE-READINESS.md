@@ -1,5 +1,12 @@
 # Release decision: blocked
 
+**Paused before fresh live validation, 2026-11-04.** The recorded boss failure is
+prevented by the combined arithmetic candidate in the diagnostic replay: the boss
+is visible and its tracked float fields remain finite at the after frame. See
+`VALIDATION.md` for hashes, frame alignment, baseline comparison and trace limits.
+This is not yet live boss completion or full-game validation. The pointer crash
+and later-mission gates remain open. No new public release or store submission.
+
 Continuation on 2026-11-04 added WASD/mouse controls, tested CPU FPCC and integer
 translation corrections, invalid depth-plane rejection, and process-test fixes.
 See the dated entry in `VALIDATION.md` and `RELEASE-NOTES.md`. These are source
