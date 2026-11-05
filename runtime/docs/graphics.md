@@ -1063,12 +1063,22 @@ linearly, so a font or icon sampled nearest stays as blocky as it was meant to b
 only when a texture is minified at a slant, so a scene of ships near the camera in space
 changes very little and a floor stretching away changes the most.
 
-**Texture packs** (`gx/texture_pack.h`, `--texture-pack=DIR`, `--texture-dump=DIR`). A
+**Texture packs** (`gx/texture_pack.h`, `--texture-pack=DIR`, `--texture-dump=DIR`). Dolphin's
+names are matched as well, so its packs load unchanged: `tex1_<w>x<h>[_m]_<texels>[_<palette>]_<format>`,
+the hashes XXH64 with seed 0 (`xxhash64.h`, written from the xxHash specification) of the top
+level's bytes in whole format blocks and of the palette entries from the lowest to the highest
+index the top level uses, with `$` standing for either hash in a pack that matches every
+palette or every texture. Whether the game samples a texture with mips (`_m`) is a sampler
+setting the shared decode does not know, so both spellings are tried. For CI14x2 Dolphin reads
+each index from one byte-swapped byte; that is kept, or its packs would not match. Dolphin's
+`_mipN` files are skipped (the chain is made from the top level) and DDS files are not read.
+Checked against Dolphin's own dump of a game's paletted textures: every name matched. A
 texture decoded from guest memory is named by `TexData::hash`, which covers its texels at
 every level and the palette entries they use, and so is the same in every run. The dump
 writes each one once as `<hash>.png`; a pack holds replacements under the same names,
-anywhere under its directory. A replacement must have the original's shape at 2, 4 or 8
-times its size; others are refused once, with the reason. The shaders keep the game's own
+anywhere under its directory. A replacement must have the original's shape at a larger size
+(any scale; the sampler shift is log2 of it, fractional for 3x); others are refused once, with
+the reason. The shaders keep the game's own
 size (texture coordinates are divided by the size in the texture image registers), so only
 the detail changes. The uploaded chain runs from the replacement's size down to the
 original's smallest level, and the sampler moves the game's LOD limits down by the extra

@@ -66,6 +66,15 @@ $preset = Get-HdPresetSettings
 Assert-Equal 4.0 $preset.scale 'HD preset uses 4x'
 Assert-Equal '16' $preset.anisotropy 'HD preset uses 16x anisotropy'
 foreach ($key in $preset.Keys) { Assert-Equal $preset[$key] (ConvertTo-LauncherSettingValue $key $preset[$key]) "HD preset $key is a valid setting" }
+foreach ($name in 'original','hd','widescreen') {
+  $p = Get-DisplayPreset $name
+  foreach ($key in $p.Keys) { Assert-Equal $p[$key] (ConvertTo-LauncherSettingValue $key $p[$key]) "$name preset $key is a valid setting" }
+}
+Assert-Equal 'original' (Get-DisplayPreset 'original').aspect 'original preset is 4:3'
+Assert-Equal '0' (Get-DisplayPreset 'original').anisotropy 'original preset turns enhancements off'
+Assert-Equal 'widescreen' (Get-DisplayPreset 'widescreen').aspect 'widescreen preset is 16:9'
+Assert-Equal '16' (Get-DisplayPreset 'widescreen').anisotropy 'widescreen preset keeps the HD settings'
+Assert-True (-not (Get-DisplayPreset 'hd').Contains('aspect')) 'HD preset leaves aspect alone'
 $none = Get-NativeEnhancementArgumentList (Get-LauncherSettingDefaults) '' ''
 Assert-Equal 0 $none.Count 'defaults add no runtime flags'
 $packDir = Join-Path ([IO.Path]::GetTempPath()) ('hd pack test ' + [Guid]::NewGuid().ToString('N'))
@@ -82,6 +91,12 @@ Assert-True (Test-HdTextureName '0123456789ABCDEF.PNG') 'hash name accepted with
 Assert-True (-not (Test-HdTextureName 'tex_12.png')) 'dump-by-id name refused'
 Assert-True (-not (Test-HdTextureName '0123456789abcdef.png.exe')) 'other extension refused'
 Assert-True (-not (Test-HdTextureName '..\0123456789abcdef.png')) 'path refused'
+Assert-True (Test-HdTextureName 'tex1_608x448_3350bc351be222ba_0a5410ad0d30eae2_9.png') 'Dolphin name with palette accepted'
+Assert-True (Test-HdTextureName 'tex1_64x64_m_0123456789abcdef_14.png') 'Dolphin mipmapped name accepted'
+Assert-True (Test-HdTextureName 'tex1_32x32_0123456789abcdef_$_8_arb.png') 'Dolphin wildcard and arb accepted'
+Assert-True (Test-HdTextureName 'TEX1_32x32_$_0123456789abcdef_9_mip1.PNG') 'Dolphin texture wildcard and mip accepted'
+Assert-True (-not (Test-HdTextureName 'tex1_32x32_0123456789abcdef_8.dds')) 'DDS not taken (the runtime reads PNG)'
+Assert-True (-not (Test-HdTextureName 'tex1_32x32_nothex_8.png')) 'bad Dolphin hash refused'
 
 # --- Argument quoting (CommandLineToArgvW rules) ---
 Assert-Equal '"C:\Games\SFA.iso"' (ConvertTo-NativeArgument 'C:\Games\SFA.iso') 'plain path quoted'
@@ -161,6 +176,13 @@ Assert-True ($errors[0] -match 'undeclared identifier') 'compiler error first'
 Assert-True ($errors[1] -match '^FAILED:') 'ninja failure kept'
 Assert-True ($errors[2] -match 'failed \(exit 1\)') 'worker error from stderr kept'
 Assert-Equal 0 (Get-BuildErrorLines @() $null).Count 'empty logs give no errors'
+# The worker writes its failure message to stdout with a phase tag and to stderr without one;
+# the dialog already shows it above the list.
+$failMsg = 'Compiling native executable failed (exit 1). See the build log for details.'
+$picked = Get-BuildErrorLines @('x.c(1,1): error: bad', "[Build failed] $failMsg") @($failMsg) 5 @($failMsg)
+Assert-Equal @('x.c(1,1): error: bad') $picked 'failure message shown once, not repeated in the list'
+$picked = Get-BuildErrorLines @("[Build failed] $failMsg") @($failMsg)
+Assert-Equal 1 $picked.Count 'tagged and untagged copies of a line count once'
 Assert-Equal 2 (Get-BuildErrorLines @('error: a','error: b','error: c') @() 2).Count 'error count capped'
 
 $protected = Protect-ReportText 'D:\Home\Pat\Games\SFA.iso and d:\home\pat\sfa\log' @{ 'D:\Home\Pat\Games\SFA.iso' = '<game image>'; 'D:\Home\Pat' = '%USERPROFILE%' }
@@ -171,6 +193,16 @@ $report = New-BuildFailureReport @{ Version = '0.2.0-test'; OsVersion = 'Windows
 Assert-True ($report -match 'Failed phase: Compiling native executable') 'report names the phase'
 Assert-True ($report -notmatch 'D:\\Home\\Pat') 'report has no profile path'
 Assert-True ($report -match '%USERPROFILE%') 'report keeps redacted path'
+
+# --- Crash reports ---
+Assert-Equal '' (Get-CrashLogFlag @('graphics: OpenGL','[OS] OSLink: m4.rel')) 'an ordinary log is not flagged'
+Assert-Equal '[guard] 800000E4 changed at frame 1234' (Get-CrashLogFlag @('ok','  [guard] 800000E4 changed at frame 1234  ','fatal: later')) 'first flagged line, trimmed'
+Assert-Equal 'fatal: invalid instruction' (Get-CrashLogFlag @('fatal: invalid instruction')) 'fatal lines are flagged'
+Assert-Equal '' (Get-CrashLogFlag @('nonfatal warning')) 'fatal only as a whole word'
+Assert-Equal '' (Get-CrashLogFlag $null) 'no lines, no flag'
+$summary = New-CrashReportSummary @{ Version = '0.2.0-test'; OsVersion = 'Windows'; Session = 'native-1'; When = 'today'; Flag = '[vertcheck] D:\Home\Pat\x'; Graphics = @('--scale=2'); Files = @('native-1.log') } @{ 'D:\Home\Pat' = '%USERPROFILE%' }
+Assert-True ($summary -match 'Flagged line: \[vertcheck\] %USERPROFILE%\\x') 'bundle summary names the flag, redacted'
+Assert-True ($summary -notmatch 'D:\\Home\\Pat') 'bundle summary has no profile path'
 
 Write-Output ("launcher core tests: {0} passed, {1} failed" -f $script:passed,$script:failures)
 if ($script:failures) { exit 1 }

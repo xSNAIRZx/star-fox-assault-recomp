@@ -41,9 +41,9 @@ Main weak spots: every control is placed with absolute coordinates (now in 96-DP
 - [ ] One-click controller binding ("press the button for A now") with a live test view, replacing detect → close → reload.
 - [ ] Visually verify every page at 100%, 125% and 150% scaling and at 1180×720. Done at 125% for the default window and 1180×720 (2026-11-05); 100% and 150% are still unchecked.
 - [x] Fall back to Segoe UI Semibold when Bahnschrift is not installed.
-- [ ] Keyboard and controller navigation: focus rings, tab order, Enter/Esc on dialogs, D-pad/A/B.
-- [ ] Crash Reports: flag sessions whose `.err` has `[guard]`/`[vertcheck]`, summarise the line, offer a redacted bundle (no paths, saves or RAM) for an issue.
-- [ ] Settings presets: Original (4:3, Sharp, AA off), Crisp HD (4x, Sharp), Widescreen (experimental). Matches ROADMAP item 2. Partly done: an "Apply HD preset" button (4x, 16x anisotropic, trilinear, sharp) in the HD Enhancements section; Original and Widescreen presets are not added yet.
+- [x] Keyboard and controller navigation: focus cues on every button, Ctrl+PageUp/PageDown (or Ctrl+Tab) and Ctrl+1-7 for pages, Enter/Esc on dialogs, XInput pad (D-pad/stick moves focus, A presses, B back, LB/RB pages). Pad not yet tried with a physical controller.
+- [x] Crash Reports: flag sessions with `[guard]`/`[vertcheck]`/`[thread-watch]`/fatal lines, show the line, and save a redacted report bundle (no paths, saves or RAM) for an issue.
+- [x] Settings presets: Original (4:3, 2x, sharp, no AA or enhancements), HD (4x, 16x anisotropic, trilinear, sharp), Widescreen (HD at 16:9). Matches ROADMAP item 2.
 
 ## Tier 3 — Architecture and maintainability
 

@@ -489,7 +489,14 @@ TexLookup texture_lookup(const TexParams& p, std::vector<std::shared_ptr<TexData
         h = h > 1 ? h / 2 : 1;
     }
     // Texture packs: the dump, and a larger replacement if the pack has this texture.
-    texture_pack_apply(*td, e.rewrites >= 3);
+    // The texels as they lie in memory, for Dolphin's names (the decode above has walked `src`
+    // past them).
+    TexSource source;
+    source.texels = phys_ptr(addr);
+    source.base_bytes = texture_size_bytes(p.fmt, p.width, p.height);
+    source.fmt = p.fmt; source.width = p.width; source.height = p.height;
+    if (indexed) { source.tlut = pal; source.tlut_bytes = tlut_entries * 2; }
+    texture_pack_apply(*td, e.rewrites >= 3, &source);
     e.variants.push_back({pal_hash, td});
     new_textures.push_back(td);
     // GCN_TEXLOG=1 reports every texture decoded: where it came from, its shape, and how

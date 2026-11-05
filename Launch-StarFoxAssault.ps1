@@ -10,6 +10,9 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 try {
   Add-Type -Namespace PeregrineForge -Name Native -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+[StructLayout(LayoutKind.Sequential)] public struct XInputGamepad { public ushort wButtons; public byte bLeftTrigger; public byte bRightTrigger; public short sThumbLX; public short sThumbLY; public short sThumbRX; public short sThumbRY; }
+[StructLayout(LayoutKind.Sequential)] public struct XInputState { public uint dwPacketNumber; public XInputGamepad Gamepad; }
+[DllImport("xinput1_4.dll")] public static extern int XInputGetState(int userIndex, out XInputState state);
 '@
   [void][PeregrineForge.Native]::SetProcessDPIAware()
 } catch {}
@@ -225,6 +228,11 @@ function New-Button([string]$text, [int]$width = 150, [bool]$primary = $false) {
   $b.ForeColor = $script:colors.text
   $b.Font = New-Object Drawing.Font($script:headingFontName, 10)
   $b.Cursor = [Windows.Forms.Cursors]::Hand
+  # Flat buttons draw no focus cue, so keyboard and controller users could not see where they
+  # were. A focused button gets a brighter, thicker border.
+  $restBorder = $b.FlatAppearance.BorderColor
+  $b.Add_GotFocus({ $this.FlatAppearance.BorderColor = $script:colors.text; $this.FlatAppearance.BorderSize = 2 })
+  $b.Add_LostFocus({ $this.FlatAppearance.BorderColor = $restBorder; $this.FlatAppearance.BorderSize = 1 }.GetNewClosure())
   return $b
 }
 # 96-DPI layout units to physical pixels, for code that runs after a page has been scaled.
@@ -232,6 +240,36 @@ function Get-Px([double]$value) { return [int][Math]::Round($value * $script:uiS
 # Scales a control tree built in 96-DPI units. Call once per tree, after it is fully built.
 function Set-UiScale($control) {
   if ($script:uiScale -gt 1.0) { $control.Scale([Drawing.SizeF]::new([single]$script:uiScale,[single]$script:uiScale)) }
+}
+# A progress bar in the launcher's colours: the stock control draws Windows' green on white
+# whatever its colours say. State is in .Tag: Value (0-100), Marquee (a block sweeping while
+# a phase reports no percentage) and Failed (red). Call .Invalidate() after changing it.
+function New-ThemedProgressBar([int]$w, [int]$h) {
+  $p = New-Object Windows.Forms.Panel
+  $p.Size = New-Object Drawing.Size($w,$h); $p.BackColor = $script:colors.panel2
+  $p.GetType().GetProperty('DoubleBuffered',[Reflection.BindingFlags]'Instance,NonPublic').SetValue($p,$true,$null)
+  $p.Tag = @{ Value = 0; Marquee = $true; Failed = $false; Offset = 0.0 }
+  $fill = $script:colors.cyan; $failed = $script:colors.red; $edge = $script:colors.line
+  $p.Add_Paint({
+    param($sender,$e)
+    $st = $sender.Tag; $w = $sender.ClientSize.Width; $h = $sender.ClientSize.Height
+    $brush = [Drawing.SolidBrush]::new($(if ($st.Failed) { $failed } else { $fill }))
+    $pen = [Drawing.Pen]::new($edge,1)
+    try {
+      if ($st.Marquee) {
+        $block = [int]($w * 0.22); $x = [int](($st.Offset % 1.0) * ($w + $block)) - $block
+        $e.Graphics.FillRectangle($brush,[Math]::Max(0,$x),0,[Math]::Min($block,$w - [Math]::Max(0,$x)) + [Math]::Min(0,$x),$h)
+      } else {
+        $e.Graphics.FillRectangle($brush,0,0,[int]($w * [Math]::Max(0,[Math]::Min(100,$st.Value)) / 100),$h)
+      }
+      $e.Graphics.DrawRectangle($pen,0,0,$w - 1,$h - 1)
+    } finally { $brush.Dispose(); $pen.Dispose() }
+  }.GetNewClosure())
+  $sweep = New-Object Windows.Forms.Timer; $sweep.Interval = 40
+  $sweep.Add_Tick({ if ($p.Tag.Marquee) { $p.Tag.Offset += 0.018; $p.Invalidate() } }.GetNewClosure())
+  $p.Add_Disposed({ $sweep.Stop(); $sweep.Dispose() }.GetNewClosure())
+  $sweep.Start()
+  return $p
 }
 function New-Card([int]$x, [int]$y, [int]$w, [int]$h) {
   $p = New-Object Windows.Forms.Panel
@@ -561,8 +599,7 @@ function Start-NativeBuild {
     $message.Location = New-Object Drawing.Point(26,22); $message.Size = New-Object Drawing.Size(620,28); $dialog.Controls.Add($message)
     $detail = New-Label 'Your selected game image stays in its original location.' 9 $false $script:colors.muted
     $detail.Location = New-Object Drawing.Point(27,56); $detail.Size = New-Object Drawing.Size(615,22); $dialog.Controls.Add($detail)
-    $bar = New-Object Windows.Forms.ProgressBar; $bar.Location = New-Object Drawing.Point(27,94); $bar.Size = New-Object Drawing.Size(640,26)
-    $bar.Style = 'Marquee'; $bar.MarqueeAnimationSpeed = 24; $bar.ForeColor = $script:colors.cyan; $dialog.Controls.Add($bar)
+    $bar = New-ThemedProgressBar 640 26; $bar.Location = New-Object Drawing.Point(27,94); $dialog.Controls.Add($bar)
     $progressText = New-Label 'STEP 1 OF 5  ·  CHECKING GAME IMAGE' 9 $true $script:colors.cyan
     $progressText.AutoSize = $false; $progressText.Location = New-Object Drawing.Point(27,130); $progressText.Size = New-Object Drawing.Size(400,22); $dialog.Controls.Add($progressText)
     $timeText = New-Label 'TOTAL 0:00' 9 $false $script:colors.muted
@@ -570,6 +607,8 @@ function Start-NativeBuild {
     $safetyText = New-Label 'The original game image and existing saves are kept unchanged.' 9 $false $script:colors.muted
     $safetyText.Location = New-Object Drawing.Point(27,164); $safetyText.Size = New-Object Drawing.Size(490,22); $dialog.Controls.Add($safetyText)
     $cancel = New-Button 'CANCEL BUILD' 135; $cancel.Location = New-Object Drawing.Point(532,163); $dialog.Controls.Add($cancel)
+    $dialog.CancelButton = $cancel  # Esc cancels the build, or closes the dialog once it is done
+    if ($script:formIcon) { $dialog.Icon = $script:formIcon }
     # Shown only when the build fails: the stage, the first errors and ways to share them.
     $errorBox = New-Object Windows.Forms.TextBox; $errorBox.Multiline = $true; $errorBox.ReadOnly = $true; $errorBox.WordWrap = $true; $errorBox.ScrollBars = 'Vertical'
     $errorBox.Location = New-Object Drawing.Point(27,206); $errorBox.Size = New-Object Drawing.Size(640,150); $errorBox.BorderStyle = 'FixedSingle'
@@ -617,10 +656,10 @@ function Start-NativeBuild {
           $stepText = if($step -gt 0){'STEP {0} OF 5  ·  {1}' -f $step,$phaseName.ToUpperInvariant()}else{$phaseName.ToUpperInvariant()}
           if ($null -ne $state.percent) {
             $overallPercent = Get-BuildOverallPercent $phaseName $state.percent
-            $bar.Style='Continuous'; $bar.Value=[Math]::Max($bar.Value,[Math]::Min(99,$overallPercent))
+            $bar.Tag.Marquee=$false; $bar.Tag.Value=[Math]::Max($bar.Tag.Value,[Math]::Min(99,$overallPercent)); $bar.Invalidate()
             $progressText.Text = '{0}  ·  {1}%' -f $stepText,$overallPercent
           } else {
-            $bar.Style='Marquee'; $bar.MarqueeAnimationSpeed=24
+            $bar.Tag.Marquee=$true
             $progressText.Text = if($step -gt 0){$stepText + '  ·  WORKING'}else{$stepText}
           }
         }
@@ -634,10 +673,10 @@ function Start-NativeBuild {
           $buildState.Process.Dispose(); $buildState.Process = $null
           $nativeOutputExists = Test-Path -LiteralPath $nativePath -PathType Leaf
           $success = ($exitCode -eq 0 -and $state -and $state.state -eq 'succeeded' -and $nativeOutputExists)
-          if ($success) { $message.Text='Native build completed'; $detail.Text='The game image and existing saves were left unchanged.'; $bar.Style='Continuous'; $bar.MarqueeAnimationSpeed=0; $bar.Value=100; $progressText.Text='BUILD COMPLETE  ·  100%'; $progressText.ForeColor=$colors.green; $statusLabel.Text='Native build ready.'; $statusLabel.ForeColor=$colors.green; Reset-NativeStatusCache; if($navButtons.ContainsKey('Home')){Build-PageRefresh} }
+          if ($success) { $message.Text='Native build completed'; $detail.Text='The game image and existing saves were left unchanged.'; $bar.Tag.Marquee=$false; $bar.Tag.Value=100; $bar.Invalidate(); $progressText.Text='BUILD COMPLETE  ·  100%'; $progressText.ForeColor=$colors.green; $statusLabel.Text='Native build ready.'; $statusLabel.ForeColor=$colors.green; Reset-NativeStatusCache; if($navButtons.ContainsKey('Home')){Build-PageRefresh} }
           else {
             $phase = if($state -and $state.state -in @('failed','cancelled')){[string]$state.state}else{'worker stopped'}
-            $bar.Style='Continuous'; $bar.MarqueeAnimationSpeed=0; $progressText.Text=if($phase -eq 'cancelled'){'BUILD CANCELLED'}else{'BUILD FAILED'}; $progressText.ForeColor=$colors.red
+            $bar.Tag.Marquee=$false; $bar.Tag.Failed=($phase -ne 'cancelled'); $bar.Invalidate(); $progressText.Text=if($phase -eq 'cancelled'){'BUILD CANCELLED'}else{'BUILD FAILED'}; $progressText.ForeColor=$colors.red
             if ($phase -eq 'cancelled') {
               $message.Text = 'Build cancelled'
               $detail.Text = "Details are saved in $jobDir"
@@ -648,7 +687,7 @@ function Start-NativeBuild {
               $stdoutLines = @(); $stderrLines = @()
               try { $stdoutLines = [IO.File]::ReadAllLines($stdoutPath) } catch {}
               try { $stderrLines = [IO.File]::ReadAllLines($stderrPath) } catch {}
-              $errorLines = Get-BuildErrorLines $stdoutLines $stderrLines
+              $errorLines = Get-BuildErrorLines $stdoutLines $stderrLines 5 @($reason)
               $message.Text = 'Build failed while: ' + $failedPhase.ToLowerInvariant()
               $detail.Text = $reason
               $nl = [Environment]::NewLine
@@ -847,11 +886,13 @@ function Open-ControlsFile {
   $sourceBox.DropDownStyle = 'DropDownList'; $sourceBox.Location = New-Object Drawing.Point(25,202); $sourceBox.Size = New-Object Drawing.Size(330,30)
   Set-DarkComboBox $sourceBox; $dialog.Controls.Add($sourceBox)
   $sourceHelp = New-Label 'Run detection, press each button or move each stick, then reload this list.' 8 $false $script:colors.muted
+  # Wraps within the left column instead of running under the mappings list.
+  $sourceHelp.MaximumSize = New-Object Drawing.Size(330,0)
   $sourceHelp.Location = New-Object Drawing.Point(26,239); $dialog.Controls.Add($sourceHelp)
-  $detect = New-Button 'DETECT INPUTS' 152 $true; $detect.Location = New-Object Drawing.Point(25,274)
+  $detect = New-Button 'DETECT INPUTS' 152 $true; $detect.Location = New-Object Drawing.Point(25,284)
   $dialog.Controls.Add($detect)
-  $reload = New-Button 'RELOAD LIST' 134; $reload.Location = New-Object Drawing.Point(188,274); $dialog.Controls.Add($reload)
-  $add = New-Button 'ADD MAPPING' 152 $true; $add.Location = New-Object Drawing.Point(25,330); $dialog.Controls.Add($add)
+  $reload = New-Button 'RELOAD LIST' 134; $reload.Location = New-Object Drawing.Point(188,284); $dialog.Controls.Add($reload)
+  $add = New-Button 'ADD MAPPING' 152 $true; $add.Location = New-Object Drawing.Point(25,340); $dialog.Controls.Add($add)
   $hint = New-Label 'ACTIONS' 8 $true $script:colors.muted
   $hint.Location = New-Object Drawing.Point(26,401); $dialog.Controls.Add($hint)
   $hintText = New-Label "Buttons: A, B, X, Y, Z, L, R, start, D-pad`r`nMovement: stick and C-stick directions or axes" 9 $false $script:colors.text
@@ -865,10 +906,19 @@ function Open-ControlsFile {
   $bindingList.Font = New-Object Drawing.Font('Consolas',9); $dialog.Controls.Add($bindingList)
   $remove = New-Button 'REMOVE SELECTED' 168; $remove.Location = New-Object Drawing.Point(389,496); $dialog.Controls.Add($remove)
   $pathText = New-Label ("Mapping file: {0}" -f $mapPath) 8 $false $script:colors.muted
-  $pathText.Location = New-Object Drawing.Point(26,530); $dialog.Controls.Add($pathText)
-  $save = New-Button 'SAVE & USE' 150 $true; $save.Location = New-Object Drawing.Point(765,535); $dialog.Controls.Add($save)
-  $cancel = New-Button 'CANCEL' 110; $cancel.Location = New-Object Drawing.Point(812,26); $cancel.Anchor = 'Top,Right'
+  $pathText.AutoSize = $false; $pathText.AutoEllipsis = $true; $pathText.Size = New-Object Drawing.Size(600,18)
+  $pathText.Location = New-Object Drawing.Point(26,580); $dialog.Controls.Add($pathText)
+  $save = New-Button 'SAVE & USE' 150 $true; $save.Location = New-Object Drawing.Point(785,552); $dialog.Controls.Add($save)
+  # Cancel beside Save, as a dialog's two answers; Esc and Enter answer it from the keyboard.
+  $cancel = New-Button 'CANCEL' 110; $cancel.Location = New-Object Drawing.Point(663,552)
   $cancel.Add_Click({ $dialog.Close() }); $dialog.Controls.Add($cancel)
+  $dialog.CancelButton = $cancel
+  if ($script:formIcon) { $dialog.Icon = $script:formIcon }
+  $bindingEmpty = New-Label 'No mappings yet. Pick an action and a detected input, then ADD MAPPING.' 9 $false $script:colors.muted
+  $bindingEmpty.AutoSize = $false; $bindingEmpty.TextAlign = 'MiddleCenter'; $bindingEmpty.BackColor = $script:colors.panel
+  $bindingEmpty.Location = New-Object Drawing.Point(395,280); $bindingEmpty.Size = New-Object Drawing.Size(533,40); $dialog.Controls.Add($bindingEmpty)
+  $bindingEmpty.BringToFront()
+  $updateEmpty = { $bindingEmpty.Visible = ($bindingList.Items.Count -eq 0) }.GetNewClosure()
 
   $refreshSourceList = {
     $sourceBox.Items.Clear()
@@ -889,6 +939,7 @@ function Open-ControlsFile {
     }
   }
   & $refreshSourceList
+  & $updateEmpty
 
   $add.Add_Click({
     if ($null -eq $targetBox.SelectedItem -or $null -eq $sourceBox.SelectedItem) {
@@ -897,8 +948,9 @@ function Open-ControlsFile {
     }
     $mapping = '{0} = {1}' -f [string]$targetBox.SelectedItem,[string]$sourceBox.SelectedItem
     if (-not $bindingList.Items.Contains($mapping)) { [void]$bindingList.Items.Add($mapping) }
+    & $updateEmpty
   }.GetNewClosure())
-  $remove.Add_Click({ if ($bindingList.SelectedIndex -ge 0) { $bindingList.Items.RemoveAt($bindingList.SelectedIndex) } }.GetNewClosure())
+  $remove.Add_Click({ if ($bindingList.SelectedIndex -ge 0) { $bindingList.Items.RemoveAt($bindingList.SelectedIndex) }; & $updateEmpty }.GetNewClosure())
   $save.Add_Click({
     try {
       $output = New-Object 'System.Collections.Generic.List[string]'
@@ -1292,6 +1344,47 @@ function Build-HomePage {
 # scrollbar (content is 922 wide there: 30 left margin + 820 + room for a vertical scrollbar).
 function Get-ContentPageWidth { [Math]::Max(820,(Get-ContentLogicalWidth) - 60) }
 
+# Zips the selected session's .log and .err (the last 2 MB of each) with private paths
+# replaced, and a summary, into user-data\crash-bundles. No RAM dump, save or game file.
+function Save-CrashReportBundle {
+  $i = $script:crashLogList.SelectedIndex
+  if ($i -lt 0 -or $i -ge $script:crashLogPaths.Count) { throw 'Select a crash log first.' }
+  $selected = Get-Item -LiteralPath $script:crashLogPaths[$i]
+  $session = $selected.Name -replace '\.(log|err|txt)$',''
+  $files = @(Get-ChildItem -LiteralPath $selected.DirectoryName -File | Where-Object { ($_.Name -replace '\.(log|err|txt)$','') -eq $session -and $_.Extension -in @('.log','.err','.txt') })
+  $replacements = @{}
+  if ($script:discValue) { $replacements[[string]$script:discValue] = '<game image>' }
+  $replacements[[string]$script:projectDir] = '<launcher folder>'
+  if ($env:USERPROFILE) { $replacements[[string]$env:USERPROFILE] = '%USERPROFILE%' }
+  $outDir = Join-Path $script:projectDir 'user-data\crash-bundles'
+  [IO.Directory]::CreateDirectory($outDir) | Out-Null
+  $zipPath = Join-Path $outDir ('{0}-report.zip' -f $session)
+  if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+  $flag = ''
+  $zip = [IO.Compression.ZipFile]::Open($zipPath,'Create')
+  try {
+    foreach ($f in $files) {
+      $stream = [IO.File]::Open($f.FullName,'Open','Read','ReadWrite')
+      try {
+        $keep = [Math]::Min($stream.Length,2MB); [void]$stream.Seek(-$keep,'End')
+        $bytes = New-Object byte[] $keep; [void]$stream.Read($bytes,0,$keep)
+      } finally { $stream.Dispose() }
+      $text = [Text.Encoding]::UTF8.GetString($bytes)
+      if (-not $flag) { $flag = Get-CrashLogFlag ($text -split "`r?`n") }
+      $entry = $zip.CreateEntry($f.Name); $w = New-Object IO.StreamWriter($entry.Open())
+      try { $w.Write((Protect-ReportText $text $replacements)) } finally { $w.Dispose() }
+    }
+    $summary = New-CrashReportSummary @{
+      Version = (Get-LauncherVersionText); OsVersion = [Environment]::OSVersion.VersionString
+      Session = $session; When = $selected.LastWriteTime.ToString('yyyy-MM-dd HH:mm'); Flag = $flag
+      Graphics = [string[]](Get-NativeGraphicsArguments) + [string[]](Get-NativeEnhancementArgumentList $script:settings '' '')
+      Files = @($files | ForEach-Object { $_.Name })
+    } $replacements
+    $entry = $zip.CreateEntry('summary.txt'); $w = New-Object IO.StreamWriter($entry.Open())
+    try { $w.Write($summary) } finally { $w.Dispose() }
+  } finally { $zip.Dispose() }
+  return $zipPath
+}
 function Refresh-CrashLogs($list) {
   $list.Items.Clear()
   $script:crashLogPaths = @()
@@ -1299,9 +1392,17 @@ function Refresh-CrashLogs($list) {
   $logs = Get-ChildItem -LiteralPath $script:nativeRunDir -Recurse -File -ErrorAction SilentlyContinue |
     Where-Object { ($_.Extension -in @('.log','.err') -or ($_.Extension -eq '.txt' -and $_.Name -match 'crash|error')) -and $_.Length -gt 0 } |
     Sort-Object LastWriteTimeUtc -Descending
+  $script:crashLogFlags = @()
   foreach ($log in $logs) {
-    [void]$list.Items.Add(('{0}  ·  {1:yyyy-MM-dd HH:mm}' -f $log.Name,$log.LastWriteTime))
+    # A session whose log has a guard, vertex-check, thread-watch or fatal line is marked, so
+    # the evidence is easy to find among ordinary sessions.
+    $hit = Select-String -LiteralPath $log.FullName -Pattern $script:CrashFlagPattern -List -ErrorAction SilentlyContinue | Select-Object -First 1
+    $flag = if ($hit) { Get-CrashLogFlag @($hit.Line) } else { '' }
+    # Date, time and kind fit the list's width; the file name heads the log view.
+    $kind = switch ($log.Extension) { '.err' { 'errors' } '.log' { 'output' } default { $log.Name } }
+    [void]$list.Items.Add(('{0}{1:yyyy-MM-dd HH:mm:ss}  ·  {2}' -f $(if ($flag) { '[!] ' } else { '' }),$log.LastWriteTime,$kind))
     $script:crashLogPaths += $log.FullName
+    $script:crashLogFlags += $flag
   }
   if ($script:crashEmptyLabel) { $script:crashEmptyLabel.Visible = ($list.Items.Count -eq 0) }
   if ($list.Items.Count -gt 0) { $list.SelectedIndex = 0 }
@@ -1336,7 +1437,9 @@ function Build-CrashesPage {
       try {
         $selectedLog = $script:crashLogPaths[$script:crashLogList.SelectedIndex]
         $script:crashLogDetail.ScrollBars = 'Vertical'
-        $script:crashLogDetail.Text = Get-Content -LiteralPath $selectedLog -Raw -ErrorAction Stop
+        $flagLine = $script:crashLogFlags[$script:crashLogList.SelectedIndex]
+        $script:crashLogDetail.Text = ('{0}{1}' -f [IO.Path]::GetFileName($selectedLog),[Environment]::NewLine) + $(if ($flagLine) { "FLAGGED: $flagLine
+" } else { '' }) + [Environment]::NewLine + (Get-Content -LiteralPath $selectedLog -Raw -ErrorAction Stop)
         $ramDump = [IO.Path]::ChangeExtension($selectedLog,'.ram.bin')
         if (Test-Path -LiteralPath $ramDump -PathType Leaf) {
           $script:crashLogDetail.AppendText(("`r`n`r`nRAM dump available:`r`n{0}" -f $ramDump))
@@ -1350,6 +1453,9 @@ function Build-CrashesPage {
   $refresh.Add_Click({ Refresh-CrashLogs $script:crashLogList }); $card.Controls.Add($refresh)
   $open = New-Button 'OPEN LOG FOLDER' 155; $open.Location = New-Object Drawing.Point(145,($cardHeight - 66))
   $open.Add_Click({ Open-Folder $script:nativeRunDir }); $card.Controls.Add($open)
+  $bundle = New-Button 'SAVE REPORT BUNDLE' 190 $true; $bundle.Location = New-Object Drawing.Point(312,($cardHeight - 66))
+  $bundleTip = New-Object Windows.Forms.ToolTip; $bundleTip.SetToolTip($bundle,'Zip the selected session''s logs with private paths replaced, to attach to a GitHub issue. No saves or RAM dumps.')
+  $bundle.Add_Click({ try { $zip = Save-CrashReportBundle; Set-Status ('Report bundle saved: {0}' -f [IO.Path]::GetFileName($zip)) $true; Open-Folder (Split-Path -Parent $zip) } catch { Set-Status $_.Exception.Message } }); $card.Controls.Add($bundle)
   $script:content.Controls.Add($card)
 }
 
@@ -1712,7 +1818,7 @@ function Install-HdTexturePack([string]$zipPath) {
         $count++
       }
     } finally { $archive.Dispose() }
-    if (-not $count) { throw 'No textures were found. An HD pack holds PNGs named by texture hash, like 0123456789abcdef.png (the names the texture dump gives).' }
+    if (-not $count) { throw 'No textures were found. An HD pack holds PNGs named by texture hash (0123456789abcdef.png, as the dump names them) or by Dolphin (tex1_....png). DDS packs are not supported yet.' }
     @{ name = [IO.Path]::GetFileNameWithoutExtension($zipPath); files = $count; installed = (Get-Date).ToString('s') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'pack.json') -Encoding utf8
     $previous = Join-Path $script:hdTextureRoot 'previous'
     if (Test-Path -LiteralPath $script:hdTextureDir) {
@@ -1921,7 +2027,7 @@ function Build-ModsPage {
   # HD texture packs for the native build (runtime gx/texture_pack.h).
   $hdCard=New-Card 30 680 $pageWidth 200
   $h=New-Label 'HD TEXTURE PACK (NATIVE)' 9 $true $script:colors.cyan; $h.Location=New-Object Drawing.Point(22,17); $hdCard.Controls.Add($h)
-  $hd=New-Label 'PNGs named by texture hash, at 2, 4 or 8 times the original size. Turn on "Dump textures" and play to get the originals to upscale or repaint; switch the pack on in Systems & Controls.' 9 $false $script:colors.muted
+  $hd=New-Label 'PNGs named by texture hash (from the dump) or Dolphin-style tex1_ names, at a whole multiple of the original size: Dolphin HD packs for this game install as they are (PNG only, not DDS). Switch the pack on in Systems & Controls.' 9 $false $script:colors.muted
   $hd.Location=New-Object Drawing.Point(22,42); $hd.MaximumSize=New-Object Drawing.Size(($pageWidth - 48),0); $hdCard.Controls.Add($hd)
   $script:dumpTexturesCheck=New-Object Windows.Forms.CheckBox; $script:dumpTexturesCheck.Text='Dump textures while playing (to user-data\texture-dump)'; $script:dumpTexturesCheck.AutoSize=$true
   $script:dumpTexturesCheck.Location=New-Object Drawing.Point(22,88); $script:dumpTexturesCheck.ForeColor=$script:colors.text; $script:dumpTexturesCheck.BackColor=[Drawing.Color]::Transparent; $script:dumpTexturesCheck.Checked=[bool]$script:dumpTexturesValue
@@ -1958,6 +2064,19 @@ function Save-SettingsPage {
   Save-Settings
   Set-SettingsDirty $false
   Set-Status 'Settings saved.' $true
+}
+# Fills the Settings controls from a preset (Get-DisplayPreset); only the settings it names
+# change, and nothing is saved until Save.
+function Set-SettingsPreset([string]$name) {
+  $p = Get-DisplayPreset $name
+  if ($p.Contains('scale')) { $script:scaleBox.SelectedIndex = [Array]::IndexOf([double[]](Get-LauncherSettingAllowed 'scale'),[double]$p.scale) }
+  if ($p.Contains('aspect')) { $script:aspectBox.SelectedIndex = [Array]::IndexOf((Get-LauncherSettingAllowed 'aspect'),$p.aspect) }
+  if ($p.Contains('aa')) { $script:aaBox.SelectedIndex = [Array]::IndexOf((Get-LauncherSettingAllowed 'aa'),$p.aa) }
+  if ($p.Contains('filter')) { $script:filterBox.SelectedIndex = [Array]::IndexOf((Get-LauncherSettingAllowed 'filter'),$p.filter) }
+  if ($p.Contains('anisotropy')) { $script:anisotropyBox.SelectedIndex = [Array]::IndexOf((Get-LauncherSettingAllowed 'anisotropy'),$p.anisotropy) }
+  if ($p.Contains('trilinear')) { $script:trilinearBox.Checked = [bool]$p.trilinear }
+  if ($p.Contains('softParticles')) { $script:softBox.Checked = [bool]$p.softParticles }
+  Set-Status ('{0} preset applied. Save settings to keep it.' -f (Get-Culture).TextInfo.ToTitleCase($name)) $true
 }
 function Set-SettingsDirty([bool]$dirty) {
   $script:settingsDirty = $dirty
@@ -2028,9 +2147,17 @@ function Build-SettingsPage {
   # HD enhancements: renderer options past what the console drew, all off by default.
   $hdRule=New-Object Windows.Forms.Panel; $hdRule.Location=New-Object Drawing.Point(25,450); $hdRule.Size=New-Object Drawing.Size(($card.Width-50),1); $hdRule.BackColor=$script:colors.line; $card.Controls.Add($hdRule)
   $hdHeading=New-Label 'HD ENHANCEMENTS' 11 $true $script:colors.cyan; $hdHeading.Location=New-Object Drawing.Point(25,464); $card.Controls.Add($hdHeading)
-  $preset=New-Button 'APPLY HD PRESET' 170; $preset.Location=New-Object Drawing.Point(($card.Width-195),458); $preset.Anchor='Top,Right'
-  $presetTip=New-Object Windows.Forms.ToolTip; $presetTip.SetToolTip($preset,'4x resolution, 16x anisotropic filtering, trilinear mips, sharp output. Save to keep it.')
-  $card.Controls.Add($preset)
+  # Presets fill in the controls; Save keeps them (Set-SettingsPreset).
+  $presetTip=New-Object Windows.Forms.ToolTip
+  $presetLabel=New-Label 'PRESET' 8 $true $script:colors.muted; $presetLabel.Location=New-Object Drawing.Point(($card.Width-470),470); $presetLabel.Anchor='Top,Right'; $card.Controls.Add($presetLabel)
+  $presetX=$card.Width-415
+  foreach ($p in @(@{key='original';text='ORIGINAL';tip='As the console drew it: 4:3, 2x, sharp, no anti-aliasing, no enhancements.'},
+                   @{key='hd';text='HD';tip='4x resolution, 16x anisotropic filtering, trilinear mips, sharp output. Aspect unchanged.'},
+                   @{key='widescreen';text='WIDESCREEN';tip='The HD preset at 16:9 (experimental).'})) {
+    $b=New-Button $p.text 125 ($p.key -eq 'hd'); $b.Tag=$p.key; $b.Location=New-Object Drawing.Point($presetX,458); $b.Anchor='Top,Right'
+    $b.Add_Click({ Set-SettingsPreset ([string]$this.Tag) }); $presetTip.SetToolTip($b,$p.tip); $card.Controls.Add($b)
+    $presetX += 132
+  }
   $script:anisotropyBox = Add-SettingCombo 'ANISOTROPIC FILTERING' 0 486 @('Off','2x','4x','8x','16x') ([Array]::IndexOf((Get-LauncherSettingAllowed 'anisotropy'),$script:anisotropyValue)) 'Sharper ground and walls at an angle.'
   $script:trilinearBox=New-Object Windows.Forms.CheckBox; $script:trilinearBox.Text='Smooth mip transitions (trilinear)'; $script:trilinearBox.Checked=$script:trilinearValue
   $script:trilinearBox.Location=New-Object Drawing.Point($columnX[1],494); $script:trilinearBox.AutoSize=$true; $script:trilinearBox.ForeColor=$script:colors.text; $card.Controls.Add($script:trilinearBox)
@@ -2040,15 +2167,6 @@ function Build-SettingsPage {
   $script:hdTexturesBox.Location=New-Object Drawing.Point($columnX[2],494); $script:hdTexturesBox.AutoSize=$true; $script:hdTexturesBox.ForeColor=$script:colors.text; $card.Controls.Add($script:hdTexturesBox)
   $hdPackState = if (Test-Path -LiteralPath $script:hdTextureDir -PathType Container) { 'Pack installed. Manage it in Mod Library.' } else { 'No pack installed; see Mod Library.' }
   $hdNote=New-Label $hdPackState 8 $false $script:colors.muted; $hdNote.AutoSize=$false; $hdNote.AutoEllipsis=$true; $hdNote.Size=New-Object Drawing.Size($columnWidth,18); $hdNote.Location=New-Object Drawing.Point($columnX[2],524); $card.Controls.Add($hdNote)
-  $preset.Add_Click({
-    $p = Get-HdPresetSettings
-    $script:scaleBox.SelectedIndex = [Array]::IndexOf([double[]](Get-LauncherSettingAllowed 'scale'),[double]$p.scale)
-    $script:aaBox.SelectedIndex = [Array]::IndexOf((Get-LauncherSettingAllowed 'aa'),$p.aa)
-    $script:filterBox.SelectedIndex = [Array]::IndexOf((Get-LauncherSettingAllowed 'filter'),$p.filter)
-    $script:anisotropyBox.SelectedIndex = [Array]::IndexOf((Get-LauncherSettingAllowed 'anisotropy'),$p.anisotropy)
-    $script:trilinearBox.Checked = $p.trilinear
-    Set-Status 'HD preset applied. Save settings to keep it.' $true
-  })
   $rendererRule=New-Object Windows.Forms.Panel; $rendererRule.Location=New-Object Drawing.Point(25,562); $rendererRule.Size=New-Object Drawing.Size(($card.Width-50),1); $rendererRule.BackColor=$script:colors.line; $card.Controls.Add($rendererRule)
   $rendererLabel=New-Label 'RENDERER & PRESENTATION' 11 $true $script:colors.cyan; $rendererLabel.Location=New-Object Drawing.Point(25,576); $card.Controls.Add($rendererLabel)
   $script:fullscreenBox=New-Object Windows.Forms.CheckBox; $script:fullscreenBox.Text='Start fullscreen (Alt+Enter to toggle)'
@@ -2102,6 +2220,85 @@ function Build-AboutPage {
   $folder.Add_Click({ Open-Folder $script:projectDir }); $card.Controls.Add($folder)
   $script:content.Controls.Add($card)
 }
+
+# ---- Keyboard and controller navigation ----
+# The pages in sidebar order, for Ctrl+PageUp/PageDown (or Ctrl+Tab), Ctrl+1-7 and a pad's
+# shoulder buttons.
+$script:pageOrder = @($navItems | ForEach-Object { $_.key })
+function Show-PageStep([int]$step) {
+  $i = [Array]::IndexOf($script:pageOrder,[string]$script:currentPage)
+  $next = $script:pageOrder[(($i + $step) % $script:pageOrder.Count + $script:pageOrder.Count) % $script:pageOrder.Count]
+  Show-Page $next
+  if ($script:currentPage -eq $next) { [void]$script:navButtons[$next].Focus() }
+}
+foreach ($b in $script:navButtons.Values) {
+  # The sidebar's own focus cue, as the content buttons have theirs (New-Button).
+  $b.Add_GotFocus({ if ([string]$this.Tag -ne $script:currentPage) { $this.BackColor = [Drawing.Color]::FromArgb(14,38,45); $this.ForeColor = $script:colors.text } })
+  $b.Add_LostFocus({ if ([string]$this.Tag -ne $script:currentPage) { $this.BackColor = [Drawing.Color]::Transparent; $this.ForeColor = $script:colors.muted } })
+}
+$script:form.KeyPreview = $true
+$script:form.Add_KeyDown({
+  param($sender,$e)
+  if (-not $e.Control) { return }
+  if ($e.KeyCode -eq 'Next' -or ($e.KeyCode -eq 'Tab' -and -not $e.Shift)) { Show-PageStep 1; $e.Handled = $true; $e.SuppressKeyPress = $true }
+  elseif ($e.KeyCode -eq 'PageUp' -or ($e.KeyCode -eq 'Tab' -and $e.Shift)) { Show-PageStep -1; $e.Handled = $true; $e.SuppressKeyPress = $true }
+  elseif ($e.KeyValue -ge 49 -and $e.KeyValue -le (48 + $script:pageOrder.Count)) { Show-Page $script:pageOrder[$e.KeyValue - 49]; $e.Handled = $true; $e.SuppressKeyPress = $true }
+})
+
+# A controller drives the launcher while it is the active window (the game is not): D-pad or
+# left stick moves the focus, A presses (a button or check box) or opens a list, B goes back
+# (closes a dialog, or returns to the Flight Deck), LB and RB change page. First XInput pad
+# only; a held direction repeats.
+$script:padState = @{ Last = 0; HeldSince = [DateTime]::MinValue; LastRepeat = [DateTime]::MinValue; Ok = $true }
+function Invoke-PadNavigation {
+  if (-not $script:padState.Ok) { return }
+  $active = [Windows.Forms.Form]::ActiveForm
+  if (-not $active) { $script:padState.Last = 0; return }
+  $st = New-Object PeregrineForge.Native+XInputState
+  try { if ([PeregrineForge.Native]::XInputGetState(0,[ref]$st) -ne 0) { $script:padState.Last = 0; return } }
+  catch { $script:padState.Ok = $false; return }  # no XInput on this system
+  $g = $st.Gamepad; $buttons = [int]$g.wButtons
+  # The stick as D-pad bits (up 1, down 2, left 4, right 8) past half travel.
+  if ($g.sThumbLY -gt 16000) { $buttons = $buttons -bor 1 } elseif ($g.sThumbLY -lt -16000) { $buttons = $buttons -bor 2 }
+  if ($g.sThumbLX -lt -16000) { $buttons = $buttons -bor 4 } elseif ($g.sThumbLX -gt 16000) { $buttons = $buttons -bor 8 }
+  $now = [DateTime]::UtcNow
+  $pressed = $buttons -band -bnot $script:padState.Last
+  $dirs = $buttons -band 0xF
+  if ($dirs -and ($dirs -eq ($script:padState.Last -band 0xF))) {
+    # Held: repeat after 400 ms, every 120 ms.
+    if (($now - $script:padState.HeldSince).TotalMilliseconds -gt 400 -and ($now - $script:padState.LastRepeat).TotalMilliseconds -gt 120) { $pressed = $pressed -bor $dirs; $script:padState.LastRepeat = $now }
+  } elseif ($dirs) { $script:padState.HeldSince = $now }
+  $script:padState.Last = $buttons
+  if (-not $pressed) { return }
+  $focused = $active.ActiveControl
+  while ($focused -is [Windows.Forms.ContainerControl] -and $focused.ActiveControl) { $focused = $focused.ActiveControl }
+  if ($pressed -band 0x3) {          # up/down
+    if ($focused -is [Windows.Forms.ComboBox] -and $focused.DroppedDown) { [Windows.Forms.SendKeys]::Send($(if ($pressed -band 1) { '{UP}' } else { '{DOWN}' })) }
+    elseif ($focused -is [Windows.Forms.ListBox]) { [Windows.Forms.SendKeys]::Send($(if ($pressed -band 1) { '{UP}' } else { '{DOWN}' })) }
+    else { [void]$active.SelectNextControl($focused,[bool]($pressed -band 2),$true,$true,$true) }
+  }
+  elseif ($pressed -band 0xC) {      # left/right
+    if ($focused -is [Windows.Forms.ComboBox]) { [Windows.Forms.SendKeys]::Send($(if ($pressed -band 4) { '{UP}' } else { '{DOWN}' })) }
+    else { [void]$active.SelectNextControl($focused,[bool]($pressed -band 8),$true,$true,$true) }
+  }
+  if ($pressed -band 0x1000) {       # A
+    if ($focused -is [Windows.Forms.ComboBox]) { $focused.DroppedDown = -not $focused.DroppedDown }
+    elseif ($focused -is [Windows.Forms.ButtonBase]) { [Windows.Forms.SendKeys]::Send(' ') }
+  }
+  if ($pressed -band 0x2000) {       # B
+    if ($focused -is [Windows.Forms.ComboBox] -and $focused.DroppedDown) { $focused.DroppedDown = $false }
+    elseif ($active -ne $script:form) { [Windows.Forms.SendKeys]::Send('{ESC}') }
+    elseif ($script:currentPage -ne 'Home') { Show-Page 'Home'; if ($script:currentPage -eq 'Home') { [void]$script:navButtons['Home'].Focus() } }
+  }
+  if ($active -eq $script:form) {
+    if ($pressed -band 0x100) { Show-PageStep -1 }   # LB
+    if ($pressed -band 0x200) { Show-PageStep 1 }    # RB
+  }
+}
+$script:padTimer = New-Object Windows.Forms.Timer; $script:padTimer.Interval = 50
+$script:padTimer.Add_Tick({ try { Invoke-PadNavigation } catch {} })
+$script:form.Add_Shown({ $script:padTimer.Start() })
+$script:form.Add_FormClosed({ $script:padTimer.Stop(); $script:padTimer.Dispose() })
 
 Show-Page 'Home'
 [void]$script:form.ShowDialog()

@@ -79,9 +79,11 @@ function Invoke-BuildProcess([string]$FilePath,[string[]]$Arguments,[string]$Pha
     $line=[string](@(Get-Content -LiteralPath $stdout -Tail 1 -ErrorAction SilentlyContinue) | Select-Object -Last 1)
     if($line -and $line -ne $last){
       $last=$line
+      # Only progress is reported while the step runs; its whole output is written once when
+      # it ends. Echoing other sampled lines here as well printed part of a long configure
+      # twice, which read like CMake configuring twice.
       $progress=[regex]::Match($line,'^\[(\d+)/(\d+)\]')
       if($progress.Success -and [int]$progress.Groups[2].Value -gt 0){Set-BuildStatus 'running' $Phase $line ([Math]::Round(100.0*[int]$progress.Groups[1].Value/[int]$progress.Groups[2].Value,1))}
-      else {Write-Host $line}
     }
     Start-Sleep -Milliseconds 180
     $script:active.Refresh()

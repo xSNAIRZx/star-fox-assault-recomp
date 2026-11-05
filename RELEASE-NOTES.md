@@ -1,3 +1,24 @@
+# Unreleased — 2026-11-05 polish, Dolphin packs, navigation
+
+- **Dolphin HD texture packs** load in the native build: Dolphin's `tex1_` names are
+  matched (XXH64 texel and palette hashes, `$` wildcards, `_m`), any whole-number
+  scale is accepted, and Mod Library installs a Dolphin pack ZIP as it is. Checked
+  against Dolphin's own dump: all 4 paletted textures it dumped had the same names.
+  DDS packs are not supported yet (PNG only).
+- **Presets**: Original, HD and Widescreen buttons in Systems & Controls.
+- **Crash Reports** marks sessions with guard, vertex-check, thread-watch or fatal
+  lines, shows the line, and saves a report bundle with private paths replaced.
+- **Keyboard and controller**: visible focus on every button, page shortcuts
+  (Ctrl+PageUp/PageDown, Ctrl+Tab, Ctrl+1-7), Esc on dialogs, and XInput pad
+  navigation (D-pad/stick, A, B, LB/RB) while the launcher is in front.
+- Build dialog: themed progress bar; the worker's failure line is no longer repeated
+  in the error list. Controller mapping dialog: no overlapping text, Cancel beside
+  Save, an empty-list message, and the launcher icon.
+- Builder log: a long step's output is written once (it looked like CMake configured
+  twice; it did not).
+- Not reachable by scripted input from a fresh save: a ground level (VS mode needs a
+  second pad), so anisotropic filtering and soft particles remain unchecked there.
+
 # Unreleased — 2026-11-05 HD enhancements
 
 All off by default; Systems & Controls has an HD Enhancements section and an

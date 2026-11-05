@@ -39,6 +39,19 @@ function Get-HdPresetSettings {
   return [ordered]@{ scale = 4.0; aa = 'off'; filter = 'sharp'; anisotropy = '16'; trilinear = $true }
 }
 
+# The Settings page's presets (ROADMAP item 2). Each lists only what it sets:
+#  original    as the console drew it: 4:3, 2x, sharp, no AA, no enhancements
+#  hd          Get-HdPresetSettings, aspect left alone
+#  widescreen  the HD preset at 16:9 (experimental in the runtime)
+function Get-DisplayPreset([string]$name) {
+  switch ($name) {
+    'original'   { return [ordered]@{ aspect = 'original'; scale = 2.0; aa = 'off'; filter = 'sharp'; anisotropy = '0'; trilinear = $false; softParticles = $false } }
+    'hd'         { return Get-HdPresetSettings }
+    'widescreen' { $p = Get-HdPresetSettings; $p.aspect = 'widescreen'; return $p }
+  }
+  throw "Unknown display preset: $name"
+}
+
 # The runtime flags for the HD enhancements. Texture paths are quoted for the command line;
 # a pack is passed only when it is switched on and its folder exists.
 function Get-NativeEnhancementArgumentList($settings, [string]$hdTextureDir, [string]$textureDumpDir) {
@@ -57,9 +70,13 @@ function Get-NativeEnhancementArgumentList($settings, [string]$hdTextureDir, [st
 }
 
 # A file an HD texture pack may hold: a texture's 16-hex-digit content hash and .png, as the
-# runtime's texture dump names them. Anything else in a pack ZIP is ignored.
+# runtime's texture dump names them, or Dolphin's name for it (tex1_<w>x<h>[_m]_<hash>[_<palette
+# hash>]_<format>, either hash possibly "$", with Dolphin's _arb and _mipN suffixes), so a
+# Dolphin texture pack installs as it is. Anything else in a pack ZIP is ignored; DDS files too,
+# as the runtime reads PNG only.
 function Test-HdTextureName([string]$name) {
-  return [bool]($name -match '^[0-9A-Fa-f]{16}\.[Pp][Nn][Gg]$')
+  if ($name -match '^[0-9A-Fa-f]{16}\.[Pp][Nn][Gg]$') { return $true }
+  return [bool]($name -match '^(?i)tex1_\d+x\d+(_m)?_([0-9a-f]{16}|\$)(_([0-9a-f]{16}|\$))?_\d+(_arb)?(_mip\d+)?\.png$')
 }
 
 function Get-LauncherSettingDefaults {
@@ -248,13 +265,16 @@ $script:BuildErrorPattern = '(?i)(\berror\b\s*[:(\[]|^FAILED:|CMake Error|^Trace
 
 # Picks the lines worth showing from the worker's logs: the first few that look like errors,
 # in log order, without duplicates. The compiler's own output is echoed into stdout.log.
-function Get-BuildErrorLines([string[]]$stdoutLines, [string[]]$stderrLines, [int]$max = 5) {
+# `exclude`: messages already shown elsewhere (the worker's own failure message, which it also
+# writes to both logs). The worker's "[Phase] " prefix is dropped before lines are compared.
+function Get-BuildErrorLines([string[]]$stdoutLines, [string[]]$stderrLines, [int]$max = 5, [string[]]$exclude = @()) {
   $seen = New-Object 'System.Collections.Generic.HashSet[string]'
+  foreach ($e in @($exclude)) { if ($e) { [void]$seen.Add($e.Trim()) } }
   $picked = New-Object System.Collections.Generic.List[string]
   foreach ($line in @($stdoutLines) + @($stderrLines)) {
     if ($picked.Count -ge $max) { break }
     if ([string]::IsNullOrWhiteSpace($line)) { continue }
-    $text = $line.Trim()
+    $text = ($line.Trim() -replace '^\[[A-Za-z][A-Za-z ]*\]\s+','')
     if ($text -match '(?i)\b0 errors?\b|warning:') { continue }
     if ($text -match $script:BuildErrorPattern -and $seen.Add($text)) {
       if ($text.Length -gt 300) { $text = $text.Substring(0,297) + '...' }
@@ -273,6 +293,38 @@ function Protect-ReportText([string]$text, [hashtable]$replacements) {
     $text = [regex]::Replace($text,[regex]::Escape($key),$replacements[$key].Replace('$','$$'),'IgnoreCase')
   }
   return $text
+}
+
+# --- Crash reports --------------------------------------------------------------------------
+# Lines the runtime writes when something went wrong in a session: the current-thread guard,
+# the vertex check, the thread watch, and fatal errors (runtime docs/diagnostics.md).
+$script:CrashFlagPattern = '\[guard\]|\[vertcheck\]|\[thread-watch\]|\bfatal\b'
+
+# The first flagged line of a session's log, trimmed, or '' when it has none.
+function Get-CrashLogFlag([string[]]$lines) {
+  foreach ($line in @($lines)) {
+    if ($line -and $line -match $script:CrashFlagPattern) {
+      $text = $line.Trim()
+      if ($text.Length -gt 200) { $text = $text.Substring(0,197) + '...' }
+      return $text
+    }
+  }
+  return ''
+}
+
+# The summary.txt of a crash report bundle, with private paths replaced.
+function New-CrashReportSummary([hashtable]$info, [hashtable]$replacements) {
+  $lines = New-Object System.Collections.Generic.List[string]
+  $lines.Add('Peregrine Forge crash report')
+  $lines.Add(('Launcher version: {0}' -f $info.Version))
+  $lines.Add(('Windows: {0}' -f $info.OsVersion))
+  $lines.Add(('Session: {0} ({1})' -f $info.Session,$info.When))
+  $lines.Add(('Flagged line: {0}' -f $(if ($info.Flag) { $info.Flag } else { '(none)' })))
+  $lines.Add(('Graphics: {0}' -f ($info.Graphics -join ' ')))
+  $lines.Add(('Files: {0}' -f ($info.Files -join ', ')))
+  $lines.Add('')
+  $lines.Add('Paths in these logs are replaced with placeholders. No saves, RAM dumps or game files are included.')
+  return Protect-ReportText ($lines -join "`r`n") $replacements
 }
 
 function New-BuildFailureReport([hashtable]$failure, [hashtable]$replacements) {

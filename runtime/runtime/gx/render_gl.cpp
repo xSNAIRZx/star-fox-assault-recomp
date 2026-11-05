@@ -396,7 +396,7 @@ static std::unordered_map<ShaderKey, Program, ShaderKeyHash> g_programs;
 // a filter changes nothing; at a higher internal scale it does not.)
 // hd_shift: levels a texture pack's replacement has above the game's top one (TexHd::shift),
 // 0 for the game's own texels. `levels` counts the uploaded chain, replacement or not.
-struct GlTex { GLuint tex; uint32_t w, h, levels; bool efb; bool grab; bool depth; uint32_t last_used; uint64_t hash; uint32_t hd_shift; };
+struct GlTex { GLuint tex; uint32_t w, h, levels; bool efb; bool grab; bool depth; uint32_t last_used; uint64_t hash; float hd_shift; };
 static std::unordered_map<uint32_t, GlTex> g_textures;
 // Frames counted here rather than reusing the GX frame counter, so eviction works the
 // same for any frontend. Textures the game stops using are released: a race streams
@@ -1380,7 +1380,7 @@ static void upload_texture(const TexData& t, bool from_pbo = false, size_t pbo_o
     // The game's size, replacement or not: the shaders and EFB-copy bookkeeping work in it.
     g.w = t.width; g.h = t.height;
     g.hash = t.hash;
-    g.hd_shift = t.hd ? t.hd->shift : 0;
+    g.hd_shift = t.hd ? t.hd->shift : 0.0f;
     const auto& levels = upload_levels(t);
     uint32_t w = t.hd ? t.hd->width : t.width, h = t.hd ? t.hd->height : t.height;
 #ifdef GCN_GL_ES
@@ -1556,9 +1556,10 @@ static void init_texture_filtering() {
 // above the game's top one. The game's LOD limits are in its own levels, so they move down
 // the chain by as many; a texture the game samples without mips gets the replacement's extra
 // levels, and no further, so it is never blurrier than the original far away.
-static GLuint get_sampler(uint32_t mode0, uint32_t mode1, uint32_t levels, uint32_t hd_shift = 0) {
+static GLuint get_sampler(uint32_t mode0, uint32_t mode1, uint32_t levels, float hd_shift = 0.0f) {
     const uint64_t key = (uint64_t)(mode0 & 0x3FFFFF) | ((uint64_t)(mode1 & 0xFFFF) << 22) |
-                         ((uint64_t)std::min(levels, 255u) << 38) | ((uint64_t)(hd_shift & 3) << 46);
+                         ((uint64_t)std::min(levels, 255u) << 38) |
+                         ((uint64_t)std::min(127, (int)std::lround(hd_shift * 8.0f)) << 46);  // eighths of a level
     auto it = g_samplers.find(key);
     if (it != g_samplers.end()) return it->second;
     GLuint s;
@@ -1574,7 +1575,7 @@ static GLuint get_sampler(uint32_t mode0, uint32_t mode1, uint32_t levels, uint3
     // Only where the game already filters linearly: a texture it samples nearest is meant to
     // look blocky (a font, a pixel-art icon), and blending its mips would blur it.
     if (g_force_trilinear && min_lin && mip == 1) mip = 2;
-    if (hd_shift && !mip) mip = 2;
+    if (hd_shift > 0.0f && !mip) mip = 2;
     glSamplerParameteri(s, GL_TEXTURE_MAG_FILTER, mag_lin ? GL_LINEAR : GL_NEAREST);
     GLenum mf;
     if (!mip || levels <= 1) mf = min_lin ? GL_LINEAR : GL_NEAREST;
@@ -1591,7 +1592,7 @@ static GLuint get_sampler(uint32_t mode0, uint32_t mode1, uint32_t levels, uint3
     glSamplerParameterf(s, GL_TEXTURE_MIN_LOD, min_lod);
     // The game's own texels keep exactly the game's limits (the clamp also decides between the
     // magnification and minification filters, so it matters even without mips).
-    glSamplerParameterf(s, GL_TEXTURE_MAX_LOD, !hd_shift ? max_lod : game_mips ? max_lod + (float)hd_shift : (float)hd_shift);
+    glSamplerParameterf(s, GL_TEXTURE_MAX_LOD, hd_shift <= 0.0f ? max_lod : game_mips ? max_lod + hd_shift : hd_shift);
     g_samplers[key] = s;
     return s;
 }
@@ -2526,7 +2527,7 @@ static void apply_state(const PixelState& st, int prim, float aspect_x = 1.0f) {
                 tsz[m * 2] = (float)((img0 & 0x3FF) + 1);
                 tsz[m * 2 + 1] = (float)(((img0 >> 10) & 0x3FF) + 1);
                 const uint32_t mode0 = gt->depth ? bp[base] & ~0xF0u : bp[base];  // see GlTex::depth
-                sampler = get_sampler(mode0, bp[base + 4], gt->efb ? 1 : gt->levels, gt->efb ? 0 : gt->hd_shift);
+                sampler = get_sampler(mode0, bp[base + 4], gt->efb ? 1 : gt->levels, gt->efb ? 0.0f : gt->hd_shift);
                 if (gt->depth) texsnap |= 1u << m;
             } else {
                 id = 0;

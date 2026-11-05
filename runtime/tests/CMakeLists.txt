@@ -22,6 +22,10 @@ add_executable(disc_mods_test disc_mods_test.cpp ../runtime/disc_mods.cpp)
 target_compile_features(disc_mods_test PRIVATE cxx_std_20)
 add_test(NAME disc_mods_test COMMAND disc_mods_test)
 
+add_executable(texture_pack_test texture_pack_test.cpp ../runtime/gx/texture_pack.cpp ../runtime/png.cpp ../runtime/png_read.cpp)
+target_compile_features(texture_pack_test PRIVATE cxx_std_20)
+add_test(NAME texture_pack_test COMMAND texture_pack_test)
+
 add_executable(texcoord_test texcoord_test.cpp)
 target_compile_features(texcoord_test PRIVATE cxx_std_20)
 add_test(NAME texcoord_test COMMAND texcoord_test)
