@@ -51,8 +51,11 @@ $imagePath = Set-TestFile $successRoot 'user-data/disc-image-sentinel.dat' $imag
 $localNativePath = Set-TestFile $successRoot 'build-desktop/Release/assault.exe' $localNativeBytes
 $settingsHash = Get-Hash $settingsPath; $profileHash = Get-Hash $profilePath; $cardHash = Get-Hash $cardPath; $imageHash = Get-Hash $imagePath
 $localNativeHash = Get-Hash $localNativePath
-$success = & $installer -ArchivePath $PackagePath -TargetRoot $successRoot
+$successResultPath = Join-Path $testRoot 'success-result.json'
+$success = & $installer -ArchivePath $PackagePath -TargetRoot $successRoot -ResultPath $successResultPath
 Assert-True ($success.Status -eq 'installed') 'Installer did not report success.'
+$successResult = Get-Content -LiteralPath $successResultPath -Raw | ConvertFrom-Json
+Assert-True ($successResult.Status -eq 'installed' -and [int]$successResult.FilesChanged -eq [int]$success.FilesChanged) 'Installer result file did not match the reported success.'
 Assert-True ((Get-Hash (Join-Path $successRoot 'CMakeLists.txt')) -ne (Get-Hash (Join-Path $success.BackupPath 'CMakeLists.txt'))) 'CMake source was not updated and backed up.'
 Assert-True ((Get-Content -LiteralPath (Join-Path $success.BackupPath 'CMakeLists.txt') -Raw) -match 'old project build file') 'Pre-update source backup did not preserve prior contents.'
 Assert-True ((Get-Hash $oldLicensePath) -ne $oldLicenseHash) 'Project LICENSE was not updated from the package.'
@@ -90,8 +93,11 @@ $badArchive = [IO.Compression.ZipFile]::Open($badPathZip,[IO.Compression.ZipArch
 try { $entry=$badArchive.CreateEntry('../escape.txt'); $writer=New-Object IO.StreamWriter($entry.Open()); try {$writer.Write('unsafe')} finally {$writer.Dispose()} } finally {$badArchive.Dispose()}
 $schemaCmake = Set-TestFile $schemaRoot 'CMakeLists.txt' ([Text.Encoding]::UTF8.GetBytes('schema rejection sentinel'))
 $schemaCaught = $false
-try { $null = & $installer -ArchivePath $badPathZip -TargetRoot $schemaRoot } catch { $schemaCaught = $true }
+$schemaResultPath = Join-Path $testRoot 'schema-result.json'
+try { $null = & $installer -ArchivePath $badPathZip -TargetRoot $schemaRoot -ResultPath $schemaResultPath } catch { $schemaCaught = $true }
 Assert-True $schemaCaught 'Traversal package was accepted.'
+$schemaResult = Get-Content -LiteralPath $schemaResultPath -Raw | ConvertFrom-Json
+Assert-True ($schemaResult.Status -eq 'failed' -and -not [string]::IsNullOrWhiteSpace([string]$schemaResult.Message)) 'Installer result file did not record the rejection.'
 Assert-True (([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($schemaCmake))) -ceq 'schema rejection sentinel') 'Traversal rejection changed the scratch install.'
 $results.tests.traversalRejection = @{ passed=$true; noTargetFilesChanged=$true }
 

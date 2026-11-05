@@ -28,6 +28,11 @@ $script:modsWorkDir = Join-Path $script:projectDir 'user-data\texture-pack-stagi
 $script:controllerLogDir = Join-Path $script:projectDir 'user-data\controller-setup'
 $script:nativeModsDir = Join-Path $script:projectDir 'user-data\native-mods\active'
 $script:buildState = @{ Process=$null; Dialog=$null; Timer=$null }
+$script:updateState = @{ Process=$null; Timer=$null }
+$script:currentPage = 'Home'
+$script:startupNotice = $null
+$script:sourceFreshness = $null
+$script:sessionLogKeep = 20
 [IO.Directory]::CreateDirectory($script:appDir) | Out-Null
 if ($script:portableMode -and -not (Test-Path -LiteralPath $script:settingsPath -PathType Leaf) -and (Test-Path -LiteralPath $script:legacySettingsPath -PathType Leaf)) {
   try { Copy-Item -LiteralPath $script:legacySettingsPath -Destination $script:settingsPath -ErrorAction Stop } catch {}
@@ -55,7 +60,16 @@ if (Test-Path -LiteralPath $script:settingsPath) {
     foreach ($key in @('disc','dolphin','scale','muteMusic','inputLog','controls','nativeMods','fullscreen','vsync','volume','aspect','aa','filter','deadzone')) {
       if ($null -ne $saved.$key) { $script:settings[$key] = $saved.$key }
     }
-  } catch {}
+  } catch {
+    # Keep the unreadable profile for inspection instead of silently overwriting it on the
+    # next save, and tell the user once the window is up.
+    $script:startupNotice = 'Settings file was unreadable; defaults loaded.'
+    try {
+      $corruptPath = Join-Path $script:appDir ('settings.corrupt-{0}.json' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+      Move-Item -LiteralPath $script:settingsPath -Destination $corruptPath -ErrorAction Stop
+      $script:startupNotice = 'Settings file was unreadable; defaults loaded. Old copy kept as {0}.' -f (Split-Path -Leaf $corruptPath)
+    } catch {}
+  }
 }
 $script:discValue = [string]$script:settings.disc
 $script:dolphinValue = [string]$script:settings.dolphin
@@ -98,6 +112,14 @@ $script:colors = @{
   steelShade = [Drawing.Color]::FromArgb(42,67,74)
   selection = [Drawing.Color]::FromArgb(15,47,55)
 }
+# Bahnschrift ships with Windows 10 1709 and later, but trimmed or older installs can lack it,
+# and GDI+ would then fall back to Microsoft Sans Serif. Prefer Segoe UI Semibold instead.
+$script:headingFontName = 'Bahnschrift SemiBold'
+try {
+  $installedFonts = [Drawing.Text.InstalledFontCollection]::new()
+  try { $installedNames = @($installedFonts.Families | ForEach-Object { $_.Name }) } finally { $installedFonts.Dispose() }
+  if ($installedNames -notcontains 'Bahnschrift SemiBold' -and $installedNames -notcontains 'Bahnschrift') { $script:headingFontName = 'Segoe UI Semibold' }
+} catch {}
 $script:flightDisplayFonts = [Drawing.Text.PrivateFontCollection]::new()
 $script:flightDisplayFontFamily = $null
 $script:flightDisplayFontPath = Join-Path $script:projectDir 'assets\fonts\Orbitron-Variable.ttf'
@@ -156,7 +178,7 @@ function New-Label([string]$text, [int]$size = 10, [bool]$bold = $false, $color 
   $l.Text = $text
   $l.AutoSize = $true
   $fontSize = [Math]::Max(8,$size)
-  $fontFamily = if ($bold -or $fontSize -ge 20) { 'Bahnschrift SemiBold' } else { 'Segoe UI' }
+  $fontFamily = if ($bold -or $fontSize -ge 20) { $script:headingFontName } else { 'Segoe UI' }
   $l.Font = New-Object Drawing.Font($fontFamily, $fontSize, [Drawing.FontStyle]::Regular)
   $l.ForeColor = if ($null -eq $color -or $color.IsEmpty) { $script:colors.text } else { $color }
   $l.BackColor = [Drawing.Color]::Transparent
@@ -175,7 +197,7 @@ function New-Button([string]$text, [int]$width = 150, [bool]$primary = $false) {
   $b.FlatAppearance.MouseOverBackColor = if ($primary) { [Drawing.Color]::FromArgb(12,126,142) } else { [Drawing.Color]::FromArgb(20,56,65) }
   $b.FlatAppearance.MouseDownBackColor = [Drawing.Color]::FromArgb(10,82,94)
   $b.ForeColor = $script:colors.text
-  $b.Font = New-Object Drawing.Font('Bahnschrift SemiBold', 10)
+  $b.Font = New-Object Drawing.Font($script:headingFontName, 10)
   $b.Cursor = [Windows.Forms.Cursors]::Hand
   return $b
 }
@@ -246,23 +268,10 @@ function Add-SectionHeader($parent, [string]$title, [string]$subtitle = '') {
     $parent.Controls.Add($b)
   }
 }
-function Get-NativeStatus {
-  if (-not (Test-Path -LiteralPath $script:nativePath -PathType Leaf)) { return 'NOT BUILT' }
-  $buildInfoPath = Join-Path $script:projectDir 'user-data\native-build-info.json'
-  $buildInfo = $null
-  try { if (Test-Path -LiteralPath $buildInfoPath -PathType Leaf) { $buildInfo = Get-Content -LiteralPath $buildInfoPath -Raw | ConvertFrom-Json } } catch { }
-  if (-not $buildInfo -or [int]$buildInfo.schema_version -lt 2 -or [string]::IsNullOrWhiteSpace([string]$buildInfo.image_sha256)) { return 'UPDATE AVAILABLE' }
-  if (-not (Test-FilePath ([string]$script:discValue))) { return 'UPDATE AVAILABLE' }
-  try {
-    $imagePath = [IO.Path]::GetFullPath([string]$script:discValue)
-    $builtImagePath = [IO.Path]::GetFullPath([string]$buildInfo.image)
-    $imageFile = Get-Item -LiteralPath $imagePath -ErrorAction Stop
-    if (-not [string]::Equals($imagePath,$builtImagePath,[StringComparison]::OrdinalIgnoreCase) -or
-        [long]$buildInfo.image_size -ne [long]$imageFile.Length -or
-        [long]$buildInfo.image_modified_utc_ticks -ne [long]$imageFile.LastWriteTimeUtc.Ticks -or
-        [string]$buildInfo.game_id -cne 'GF7E01') { return 'UPDATE AVAILABLE' }
-  } catch { return 'UPDATE AVAILABLE' }
-  $exeTime = (Get-Item -LiteralPath $script:nativePath).LastWriteTimeUtc
+function Get-LatestSourceWriteUtc {
+  # Scanning runtime/recomp/decomp recursively is slow on large trees, so the result is cached
+  # for the launcher session and cleared after a build or a local package update.
+  if ($null -ne $script:sourceFreshness) { return $script:sourceFreshness }
   $sources = @('CMakeLists.txt','runtime','recomp','decomp\config\GF7E01') | ForEach-Object { Join-Path $script:projectDir $_ }
   $latest = Get-ChildItem -LiteralPath $sources -Recurse -File -ErrorAction SilentlyContinue |
     Where-Object {
@@ -270,8 +279,44 @@ function Get-NativeStatus {
       ($_.Name -eq 'CMakeLists.txt' -or $_.Extension -in @('.c','.cpp','.h','.hpp','.py','.cmake','.txt','.yml','.yaml','.manifest','.rc'))
     } |
     Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
-  if ($latest -and $latest.LastWriteTimeUtc -gt $exeTime) { return 'UPDATE AVAILABLE' }
+  $script:sourceFreshness = if ($latest) { $latest.LastWriteTimeUtc } else { [DateTime]::MinValue }
+  return $script:sourceFreshness
+}
+function Reset-NativeStatusCache { $script:sourceFreshness = $null }
+function Get-NativeStatus {
+  # Returns NOT BUILT, REBUILD REQUIRED or READY. $script:nativeStatusReason explains a rebuild.
+  $script:nativeStatusReason = ''
+  if (-not (Test-Path -LiteralPath $script:nativePath -PathType Leaf)) { return 'NOT BUILT' }
+  $buildInfoPath = Join-Path $script:projectDir 'user-data\native-build-info.json'
+  $buildInfo = $null
+  try { if (Test-Path -LiteralPath $buildInfoPath -PathType Leaf) { $buildInfo = Get-Content -LiteralPath $buildInfoPath -Raw | ConvertFrom-Json } } catch { }
+  if (-not $buildInfo -or [int]$buildInfo.schema_version -lt 2 -or [string]::IsNullOrWhiteSpace([string]$buildInfo.image_sha256)) {
+    $script:nativeStatusReason = 'build record is missing or from an older launcher'; return 'REBUILD REQUIRED'
+  }
+  if (-not (Test-FilePath ([string]$script:discValue))) { $script:nativeStatusReason = 'selected game image was not found'; return 'REBUILD REQUIRED' }
+  try {
+    $imagePath = [IO.Path]::GetFullPath([string]$script:discValue)
+    $builtImagePath = [IO.Path]::GetFullPath([string]$buildInfo.image)
+    $imageFile = Get-Item -LiteralPath $imagePath -ErrorAction Stop
+    if (-not [string]::Equals($imagePath,$builtImagePath,[StringComparison]::OrdinalIgnoreCase) -or
+        [long]$buildInfo.image_size -ne [long]$imageFile.Length -or
+        [long]$buildInfo.image_modified_utc_ticks -ne [long]$imageFile.LastWriteTimeUtc.Ticks -or
+        [string]$buildInfo.game_id -cne 'GF7E01') { $script:nativeStatusReason = 'selected game image differs from the one built'; return 'REBUILD REQUIRED' }
+  } catch { $script:nativeStatusReason = 'selected game image could not be checked'; return 'REBUILD REQUIRED' }
+  $exeTime = (Get-Item -LiteralPath $script:nativePath).LastWriteTimeUtc
+  if ((Get-LatestSourceWriteUtc) -gt $exeTime) { $script:nativeStatusReason = 'project source changed since the last build'; return 'REBUILD REQUIRED' }
   return 'READY · NATIVE PROTOTYPE'
+}
+function Get-RunningNativeGame {
+  # Only this project's assault.exe counts; an unrelated program with the same name must not
+  # block launches. A process whose path cannot be read (for example one running elevated) is
+  # still treated as running, so saves and asset packs are never changed under a live game.
+  $target = [IO.Path]::GetFullPath($script:nativePath)
+  return @(Get-Process -Name assault -ErrorAction SilentlyContinue | Where-Object {
+    $path = $null
+    try { $path = $_.Path } catch {}
+    [string]::IsNullOrEmpty($path) -or [string]::Equals([IO.Path]::GetFullPath($path),$target,[StringComparison]::OrdinalIgnoreCase)
+  })
 }
 function Test-NativeBuildImage([string]$imagePath) {
   $buildInfoPath = Join-Path $script:projectDir 'user-data\native-build-info.json'
@@ -336,9 +381,39 @@ function Get-PlaytimeText {
   if($minutes -lt 60){return ('{0} MIN PLAYED' -f $minutes)}
   return ('{0}H {1:00}M PLAYED' -f [Math]::Floor($minutes/60),($minutes%60))
 }
+function Invoke-WithProcessEnvironment([System.Collections.IDictionary]$variables, [scriptblock]$action) {
+  # Start-Process passes the launcher's own environment to the child, so set the session's
+  # variables for the duration of the start only and always put the previous values back.
+  $previous = @{}
+  foreach ($name in $variables.Keys) { $previous[$name] = [Environment]::GetEnvironmentVariable($name,'Process') }
+  try {
+    foreach ($name in $variables.Keys) { [Environment]::SetEnvironmentVariable($name,$variables[$name],'Process') }
+    & $action
+  } finally {
+    foreach ($name in $previous.Keys) { [Environment]::SetEnvironmentVariable($name,$previous[$name],'Process') }
+  }
+}
+function Remove-OldSessionLogs([string]$logsDir) {
+  # Each launch adds native-<stamp>-<id>.log/.err (and a .ram.bin when the game dumps memory).
+  # Keep the newest sessions plus the newest sessions whose error log recorded a guard,
+  # vertex-check or fatal line, so crash evidence outlives ordinary play.
+  try {
+    $sessions = @(Get-ChildItem -LiteralPath $logsDir -File -Filter 'native-*' -ErrorAction Stop |
+      Group-Object { $_.Name -replace '\.(log|err|ram\.bin)$','' } |
+      Sort-Object Name -Descending)  # names start with a sortable native-yyyyMMdd-HHmmss-fff stamp
+    if ($sessions.Count -le $script:sessionLogKeep) { return }
+    $flaggedKept = 0
+    foreach ($session in ($sessions | Select-Object -Skip $script:sessionLogKeep)) {
+      $err = $session.Group | Where-Object { $_.Extension -eq '.err' } | Select-Object -First 1
+      $flagged = $err -and (Select-String -LiteralPath $err.FullName -Pattern '\[guard\]|\[vertcheck\]|\[thread-watch\]|fatal' -List -Quiet -ErrorAction SilentlyContinue)
+      if ($flagged -and $flaggedKept -lt $script:sessionLogKeep) { $flaggedKept++; continue }
+      foreach ($file in $session.Group) { Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue }
+    }
+  } catch {}
+}
 function Start-NativeGame {
   try {
-    if (Get-Process -Name assault -ErrorAction SilentlyContinue) { throw 'The native game is already running. Close it before starting another session.' }
+    if (Get-RunningNativeGame) { throw 'The native game is already running. Close it before starting another session.' }
     if (-not (Test-Path -LiteralPath $script:nativePath -PathType Leaf)) { throw 'Build the native app first with Build / Update.' }
     $info = Test-GameImage $script:discValue
     if (-not (Test-NativeBuildImage $script:discValue)) { throw 'This native build does not match the selected game image, or its build record is missing. Rebuild from the selected image before playing.' }
@@ -351,47 +426,34 @@ function Start-NativeGame {
     if($script:fullscreenValue){$nativeArgs += '--fullscreen'}
     if (-not $script:logValue) { $nativeArgs += '--no-input-log' }
     if ($script:muteValue) { $nativeArgs += '--no-music' }
-    if ($script:controlsValue) { $nativeArgs += ('--controls="{0}"' -f $script:controlsValue) }
-    $nativeArgs += ('"{0}"' -f $script:discValue)
+    if ($script:controlsValue) { $nativeArgs += ('--controls=' + (ConvertTo-NativeArgument $script:controlsValue)) }
+    $nativeArgs += (ConvertTo-NativeArgument $script:discValue)
     $logsDir = Join-Path $script:nativeRunDir 'logs'
     [IO.Directory]::CreateDirectory($logsDir) | Out-Null
+    Remove-OldSessionLogs $logsDir
     $sessionName = 'native-{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff'),([Guid]::NewGuid().ToString('N').Substring(0,6))
     $stderr = Join-Path $logsDir ($sessionName + '.err')
     $stdout = Join-Path $logsDir ($sessionName + '.log')
     $ramDump = Join-Path $logsDir ($sessionName + '.ram.bin')
-    $previousModsDir = [Environment]::GetEnvironmentVariable('GCN_MODS_DIR','Process')
-    $previousFontDir = [Environment]::GetEnvironmentVariable('GCN_FONT_DIR','Process')
-    $previousTimeScale = [Environment]::GetEnvironmentVariable('GCN_TIMESCALE','Process')
-    $previousClockLog = [Environment]::GetEnvironmentVariable('GCN_CLOCKLOG','Process')
-    $previousScriptInput = [Environment]::GetEnvironmentVariable('GCN_INPUT','Process')
-    $previousRamDump = [Environment]::GetEnvironmentVariable('GCN_RAM_DUMP','Process')
-    $previousWatchAddr = [Environment]::GetEnvironmentVariable('GCN_WATCH_ADDR','Process')
-    $previousGuard = [Environment]::GetEnvironmentVariable('GCN_GUARD','Process')
-    try {
-      [Environment]::SetEnvironmentVariable('GCN_TIMESCALE','1','Process')
-      [Environment]::SetEnvironmentVariable('GCN_CLOCKLOG','1','Process')
-      [Environment]::SetEnvironmentVariable('GCN_INPUT',$null,'Process')
-      [Environment]::SetEnvironmentVariable('GCN_RAM_DUMP',$ramDump,'Process')
-      # GCN_WATCH_ADDR only reports in a diagnostic build, which the packaged build is not.
-      # The guard reports in any build, so a session that hits the current-thread crash
-      # carries the frame and the value either side of the change in its own log.
-      [Environment]::SetEnvironmentVariable('GCN_WATCH_ADDR','800000E4','Process')
-      [Environment]::SetEnvironmentVariable('GCN_GUARD','800000E4','Process')
-      [Environment]::SetEnvironmentVariable('GCN_FONT_DIR',(Join-Path $script:projectDir 'assets\fonts'),'Process')
-      if($script:nativeModsValue) {
-        if(-not(Test-Path -LiteralPath $script:nativeModsDir -PathType Container)){throw 'Install a native asset pack before enabling native mods.'}
-        [Environment]::SetEnvironmentVariable('GCN_MODS_DIR',$script:nativeModsDir,'Process')
-      } else { [Environment]::SetEnvironmentVariable('GCN_MODS_DIR',$null,'Process') }
-      $gameProcess = Start-Process -FilePath $script:nativePath -ArgumentList $nativeArgs -WorkingDirectory $script:nativeRunDir -RedirectStandardError $stderr -RedirectStandardOutput $stdout -PassThru
-    } finally {
-      [Environment]::SetEnvironmentVariable('GCN_MODS_DIR',$previousModsDir,'Process')
-      [Environment]::SetEnvironmentVariable('GCN_FONT_DIR',$previousFontDir,'Process')
-      [Environment]::SetEnvironmentVariable('GCN_TIMESCALE',$previousTimeScale,'Process')
-      [Environment]::SetEnvironmentVariable('GCN_CLOCKLOG',$previousClockLog,'Process')
-      [Environment]::SetEnvironmentVariable('GCN_INPUT',$previousScriptInput,'Process')
-      [Environment]::SetEnvironmentVariable('GCN_RAM_DUMP',$previousRamDump,'Process')
-      [Environment]::SetEnvironmentVariable('GCN_WATCH_ADDR',$previousWatchAddr,'Process')
-      [Environment]::SetEnvironmentVariable('GCN_GUARD',$previousGuard,'Process')
+    # GCN_WATCH_ADDR only reports in a diagnostic build, which the packaged build is not.
+    # The guard reports in any build, so a session that hits the current-thread crash
+    # carries the frame and the value either side of the change in its own log.
+    $sessionEnv = [ordered]@{
+      GCN_TIMESCALE  = '1'
+      GCN_CLOCKLOG   = '1'
+      GCN_INPUT      = $null
+      GCN_RAM_DUMP   = $ramDump
+      GCN_WATCH_ADDR = '800000E4'
+      GCN_GUARD      = '800000E4'
+      GCN_FONT_DIR   = (Join-Path $script:projectDir 'assets\fonts')
+      GCN_MODS_DIR   = $null
+    }
+    if($script:nativeModsValue) {
+      if(-not(Test-Path -LiteralPath $script:nativeModsDir -PathType Container)){throw 'Install a native asset pack before enabling native mods.'}
+      $sessionEnv.GCN_MODS_DIR = $script:nativeModsDir
+    }
+    $gameProcess = Invoke-WithProcessEnvironment $sessionEnv {
+      Start-Process -FilePath $script:nativePath -ArgumentList $nativeArgs -WorkingDirectory $script:nativeRunDir -RedirectStandardError $stderr -RedirectStandardOutput $stdout -PassThru
     }
     try {
       $tracker=Join-Path $script:projectDir 'tools\Track-Session.ps1'
@@ -427,6 +489,7 @@ function Start-NativeBuild {
     $null = Test-GameImage $script:discValue
     Save-Settings
     if ($script:buildState.Process -and -not $script:buildState.Process.HasExited) { Set-Status 'A native build is already running.'; return }
+    if ($script:updateState.Process -and -not $script:updateState.Process.HasExited) { Set-Status 'Wait for the local package update to finish before building.'; return }
     $buildScript = Join-Path $script:projectDir 'tools\Build-StarFoxAssault.ps1'
     if (-not (Test-Path -LiteralPath $buildScript -PathType Leaf)) { throw 'The native build script is missing from this launcher package.' }
     $jobId = '{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff'),([Guid]::NewGuid().ToString('N'))
@@ -516,7 +579,7 @@ function Start-NativeBuild {
           $buildState.Process.Dispose(); $buildState.Process = $null
           $nativeOutputExists = Test-Path -LiteralPath $nativePath -PathType Leaf
           $success = ($exitCode -eq 0 -and $state -and $state.state -eq 'succeeded' -and $nativeOutputExists)
-          if ($success) { $message.Text='Native build completed'; $detail.Text='The game image and existing saves were left unchanged.'; $bar.Style='Continuous'; $bar.MarqueeAnimationSpeed=0; $bar.Value=100; $progressText.Text='BUILD COMPLETE  ·  100%'; $progressText.ForeColor=$colors.green; $statusLabel.Text='Native build ready.'; $statusLabel.ForeColor=$colors.green; if($navButtons.ContainsKey('Home')){Build-PageRefresh} }
+          if ($success) { $message.Text='Native build completed'; $detail.Text='The game image and existing saves were left unchanged.'; $bar.Style='Continuous'; $bar.MarqueeAnimationSpeed=0; $bar.Value=100; $progressText.Text='BUILD COMPLETE  ·  100%'; $progressText.ForeColor=$colors.green; $statusLabel.Text='Native build ready.'; $statusLabel.ForeColor=$colors.green; Reset-NativeStatusCache; if($navButtons.ContainsKey('Home')){Build-PageRefresh} }
           else {
             $phase = if($state -and $state.state -in @('failed','cancelled')){[string]$state.state}else{'worker stopped'}
             $message.Text = if($phase -eq 'cancelled'){'Build cancelled'}else{'Build did not complete'}
@@ -537,8 +600,7 @@ function Start-NativeBuild {
   } catch { Set-Status $_.Exception.Message }
 }
 function Build-PageRefresh {
-  $page = 'Home'
-  foreach($key in $script:navButtons.Keys){if($script:navButtons[$key].BackColor -eq $script:colors.selection){$page=$key;break}}
+  $page = if ($script:currentPage) { [string]$script:currentPage } else { 'Home' }
   Show-Page $page
 }
 function Build-Native { Start-NativeBuild }
@@ -561,26 +623,66 @@ function Select-GameImage([bool]$buildIfNeeded = $true) {
 function Open-PrototypeUpdateDialog {
   $installer = Join-Path $script:projectDir 'tools\Install-PrototypeUpdate.ps1'
   if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { Set-Status 'The local package installer is missing.'; return }
+  if ($script:updateState.Process -and -not $script:updateState.Process.HasExited) { Set-Status 'A local package update is already being installed.'; return }
+  if ($script:buildState.Process -and -not $script:buildState.Process.HasExited) { Set-Status 'Wait for the native build to finish before installing a package.'; return }
   $dialog = New-Object Windows.Forms.OpenFileDialog
   $dialog.Title = 'Choose a local Star Fox Assault prototype package'
   $dialog.Filter = 'Prototype update package (*.zip)|*.zip'
   $dialog.CheckFileExists = $true
-  if ($dialog.ShowDialog($script:form) -ne [Windows.Forms.DialogResult]::OK) { return }
-  $oldCursor = $script:form.UseWaitCursor
   try {
-    $script:form.UseWaitCursor = $true
-    $result = & $installer -ArchivePath $dialog.FileName
-    if ($null -eq $result -or $result.Status -ne 'installed') { throw 'The package installer did not report a completed update.' }
+    if ($dialog.ShowDialog($script:form) -ne [Windows.Forms.DialogResult]::OK) { return }
+    $archivePath = $dialog.FileName
+  } finally { $dialog.Dispose() }
+  try {
+    # Run the installer as its own process, like the build worker, so extracting and hashing a
+    # large package never freezes the launcher window.
+    $jobDir = Join-Path (Join-Path $script:projectDir 'user-data\update-jobs') ('{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff'),([Guid]::NewGuid().ToString('N').Substring(0,8)))
+    [IO.Directory]::CreateDirectory($jobDir) | Out-Null
+    $resultPath = Join-Path $jobDir 'result.json'
+    $stdoutPath = Join-Path $jobDir 'stdout.log'; $stderrPath = Join-Path $jobDir 'stderr.log'
+    $installArgs = '-NoProfile -ExecutionPolicy Bypass -File ' + (ConvertTo-NativeArgument $installer) +
+      ' -ArchivePath ' + (ConvertTo-NativeArgument $archivePath) +
+      ' -ResultPath ' + (ConvertTo-NativeArgument $resultPath)
+    $script:updateState.Process = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
+      -ArgumentList $installArgs -WorkingDirectory $script:projectDir -RedirectStandardOutput $stdoutPath `
+      -RedirectStandardError $stderrPath -WindowStyle Hidden -PassThru
+    if (-not $script:updateState.Process) { throw 'Could not start the local package installer.' }
+    $null = $script:updateState.Process.Handle
+  } catch {
+    $script:updateState.Process = $null
+    Set-Status ('Update not applied · {0}' -f $_.Exception.Message)
+    [Windows.Forms.MessageBox]::Show($script:form,$_.Exception.Message,'Local package update failed','OK','Warning') | Out-Null
+    return
+  }
+  $script:form.UseWaitCursor = $true
+  Set-Status 'Installing local package…' $true
+  $timer = New-Object Windows.Forms.Timer; $timer.Interval = 300
+  $script:updateState.Timer = $timer
+  $timer.Add_Tick({ Complete-PrototypeUpdate $resultPath $stderrPath }.GetNewClosure())
+  $timer.Start()
+}
+function Complete-PrototypeUpdate([string]$resultPath, [string]$stderrPath) {
+  $proc = $script:updateState.Process
+  if ($proc -and -not $proc.HasExited) { return }
+  if ($script:updateState.Timer) { $script:updateState.Timer.Stop(); $script:updateState.Timer.Dispose(); $script:updateState.Timer = $null }
+  $script:form.UseWaitCursor = $false
+  $exitCode = -1
+  if ($proc) { try { $proc.WaitForExit(); $exitCode = $proc.ExitCode } catch {}; $proc.Dispose() }
+  $script:updateState.Process = $null
+  $result = $null
+  try { if (Test-Path -LiteralPath $resultPath -PathType Leaf) { $result = Get-Content -LiteralPath $resultPath -Raw -Encoding UTF8 | ConvertFrom-Json } } catch {}
+  if ($exitCode -eq 0 -and $result -and $result.Status -eq 'installed') {
+    Reset-NativeStatusCache
     Set-Status ('Installed local package · {0} files · restart launcher to use update' -f $result.FilesChanged) $true
     $message = "Updated $($result.FilesChanged) application files.`r`n`r`nPrevious files are backed up at:`r`n$($result.BackupPath)`r`n`r`nReview log:`r`n$($result.LogPath)`r`n`r`nRestart the launcher to load the update. Your current Settings and user data were left in place. SHA-256 checks detect package changes but do not authenticate its publisher."
     [Windows.Forms.MessageBox]::Show($script:form,$message,'Local package update','OK','Information') | Out-Null
-  } catch {
-    Set-Status ('Update not applied · {0}' -f $_.Exception.Message)
-    [Windows.Forms.MessageBox]::Show($script:form,$_.Exception.Message,'Local package update failed','OK','Warning') | Out-Null
-  } finally {
-    $script:form.UseWaitCursor = $oldCursor
-    $dialog.Dispose()
+    return
   }
+  $reason = if ($result -and $result.Message) { [string]$result.Message } else { '' }
+  if (-not $reason) { try { $reason = ([IO.File]::ReadAllText($stderrPath)).Trim() } catch {} }
+  if (-not $reason) { $reason = 'The package installer did not report a completed update.' }
+  Set-Status ('Update not applied · {0}' -f $reason)
+  [Windows.Forms.MessageBox]::Show($script:form,$reason,'Local package update failed','OK','Warning') | Out-Null
 }
 function Start-ControllerDetector {
   try {
@@ -840,7 +942,7 @@ $script:form.Controls.Add($sidebar)
   $brandMark = New-Object Windows.Forms.Panel
   $brandMark.Location = New-Object Drawing.Point(19,14); $brandMark.Size = New-Object Drawing.Size(60,54)
   $brandMark.BackColor = [Drawing.Color]::Transparent
-  $script:brandFont = New-Object Drawing.Font('Bahnschrift SemiBold',23,[Drawing.FontStyle]::Bold)
+  $script:brandFont = New-Object Drawing.Font($script:headingFontName,23,[Drawing.FontStyle]::Bold)
   $script:brandBrush = New-Object Drawing.SolidBrush($script:colors.text)
   $script:brandAccent = New-Object Drawing.Pen($script:colors.blue,2)
   $brandMark.Add_Paint({
@@ -876,6 +978,7 @@ $script:form.Add_Shown({
   Update-StatusLabelBounds
   $script:sidebar.BringToFront()
   Show-Page 'Home'
+  if ($script:startupNotice) { Set-Status $script:startupNotice }
   if (-not (Test-FilePath $script:discValue)) {
     $script:form.BeginInvoke([Action]{ [void](Select-GameImage $true) }) | Out-Null
   }
@@ -933,13 +1036,15 @@ foreach ($item in $navItems) {
   $b.TextAlign = 'MiddleLeft'; $b.Padding=New-Object Windows.Forms.Padding(14,0,4,0)
   $b.BackColor = [Drawing.Color]::Transparent; $b.ForeColor = $script:colors.muted
   $b.FlatAppearance.MouseOverBackColor=[Drawing.Color]::FromArgb(14,38,45)
-  $b.Font = New-Object Drawing.Font('Bahnschrift SemiBold',10); $b.Cursor = [Windows.Forms.Cursors]::Hand
+  $b.Font = New-Object Drawing.Font($script:headingFontName,10); $b.Cursor = [Windows.Forms.Cursors]::Hand
   $b.Add_Click({ Show-Page ([string]$this.Tag) })
   $sidebar.Controls.Add($b); $script:navButtons[$item.key] = $b; $navY += 52
 }
 Update-StatusLabelBounds
 
 function Show-Page([string]$page) {
+  if (-not $script:navButtons.ContainsKey($page)) { $page = 'Home' }
+  $script:currentPage = $page
   $script:content.SuspendLayout()
   foreach ($c in @($script:content.Controls)) { $script:content.Controls.Remove($c); $c.Dispose() }
   foreach ($key in $script:navButtons.Keys) {
@@ -1014,10 +1119,11 @@ function Build-HomePage {
   $nativeStatus = Get-NativeStatus
   $buildTitle = New-Label 'NATIVE BUILD' 8 $true $script:colors.muted
   $buildTitle.Location = New-Object Drawing.Point(19,18); $statusCard.Controls.Add($buildTitle)
-  $buildValueText = if ($nativeStatus -eq 'UPDATE AVAILABLE') { 'REBUILD REQUIRED' } elseif ($nativeStatus -eq 'NOT BUILT') { 'NOT BUILT' } else { 'CURRENT' }
-  $buildColor = if ($nativeStatus -eq 'NOT BUILT') { $script:colors.red } elseif ($nativeStatus -eq 'UPDATE AVAILABLE') { $script:colors.cyan } else { $script:colors.green }
+  $buildValueText = if ($nativeStatus -eq 'REBUILD REQUIRED') { 'REBUILD REQUIRED' } elseif ($nativeStatus -eq 'NOT BUILT') { 'NOT BUILT' } else { 'CURRENT' }
+  $buildColor = if ($nativeStatus -eq 'NOT BUILT') { $script:colors.red } elseif ($nativeStatus -eq 'REBUILD REQUIRED') { $script:colors.cyan } else { $script:colors.green }
   $buildValue = New-Label $buildValueText 10 $true $buildColor
   $buildValue.Location = New-Object Drawing.Point(19,47); $statusCard.Controls.Add($buildValue)
+  if ($script:nativeStatusReason -and $script:statusTip) { $script:statusTip.SetToolTip($buildValue,('Rebuild required: {0}.' -f $script:nativeStatusReason)) }
   $discTitle = New-Label 'GAME IMAGE' 8 $true $script:colors.muted
   $discTitle.Location = New-Object Drawing.Point(220,18); $statusCard.Controls.Add($discTitle)
   $discValue = if (Test-FilePath ([string]$script:settings.disc)) { 'IMAGE FOUND' } else { 'NOT SELECTED' }
@@ -1032,13 +1138,13 @@ function Build-HomePage {
 
   $hasDisc = Test-FilePath $script:discValue
   $hasNative = Test-Path -LiteralPath $script:nativePath -PathType Leaf
-  $playText = if (-not $hasDisc) { 'SELECT GAME IMAGE' } elseif (-not $hasNative) { 'BUILD NATIVE' } elseif ($nativeStatus -eq 'UPDATE AVAILABLE') { 'REBUILD NATIVE' } else { 'LAUNCH GAME' }
+  $playText = if (-not $hasDisc) { 'SELECT GAME IMAGE' } elseif (-not $hasNative) { 'BUILD NATIVE' } elseif ($nativeStatus -eq 'REBUILD REQUIRED') { 'REBUILD NATIVE' } else { 'LAUNCH GAME' }
   $play = New-Button $playText 190 $true
   $playX = $pageWidth - 230; $playY = $cardY + 16
   $play.Size = New-Object Drawing.Size(194,54); $play.Location = New-Object Drawing.Point($playX,$playY)
   $play.Anchor = 'Bottom,Right'; $play.Add_Click({
     if (-not (Test-FilePath $script:discValue)) { [void](Select-GameImage $true) }
-    elseif (-not (Test-Path -LiteralPath $script:nativePath -PathType Leaf) -or (Get-NativeStatus) -eq 'UPDATE AVAILABLE') { Start-NativeBuild }
+    elseif (-not (Test-Path -LiteralPath $script:nativePath -PathType Leaf) -or (Get-NativeStatus) -eq 'REBUILD REQUIRED') { Start-NativeBuild }
     else { Start-NativeGame }
   }); $scene.Controls.Add($play)
   $dolphin = New-Button 'OPEN IN DOLPHIN' 194
@@ -1126,7 +1232,9 @@ function Build-LibraryPage {
   $script:content.Controls.Add($card)
   $build = New-Card 30 365 $pageWidth 130
   $bt = New-Label 'LOCAL BUILD & UPDATES' 9 $true $script:colors.cyan; $bt.Location = New-Object Drawing.Point(23,20); $build.Controls.Add($bt)
-  $bd = New-Label ("Status: {0}. Build from local source or install a local prototype ZIP; there is no online updater." -f (Get-NativeStatus)) 10 $false $script:colors.text
+  $libraryStatus = Get-NativeStatus
+  if ($script:nativeStatusReason) { $libraryStatus = '{0} ({1})' -f $libraryStatus,$script:nativeStatusReason }
+  $bd = New-Label ("Status: {0}. Build from local source or install a local prototype ZIP; there is no online updater." -f $libraryStatus) 10 $false $script:colors.text
   $bd.Location = New-Object Drawing.Point(24,55); $build.Controls.Add($bd)
   $bbText = if (Test-Path -LiteralPath $script:nativePath -PathType Leaf) { 'REBUILD NATIVE' } else { 'IMPORT & BUILD' }
   $bb = New-Button $bbText 160 $true; $bb.Location = New-Object Drawing.Point(24,82); $bb.Add_Click({ $script:discValue=$script:discBox.Text; Start-NativeBuild }); $build.Controls.Add($bb)
@@ -1303,7 +1411,7 @@ function Build-SavesPage {
   $backup = New-Button 'BACK UP NOW' 148 $true; $backup.Location=New-Object Drawing.Point(25,405)
   $backup.Add_Click({
     try {
-      if (Get-Process -Name assault -ErrorAction SilentlyContinue) { throw 'Close the native game before making a backup so the snapshot is consistent.' }
+      if (Get-RunningNativeGame) { throw 'Close the native game before making a backup so the snapshot is consistent.' }
       if (-not (Test-Path -LiteralPath $script:memcardPath -PathType Leaf)) { throw 'The native app has not created a memory card yet. Launch the native build once, then return here.' }
       $label = 'Manual backup · ' + (Get-Date -Format 'yyyy-MM-dd HH:mm')
       $dest = New-SaveBackup $script:memcardPath $label @('manual') 'manual backup' $true
@@ -1333,7 +1441,7 @@ function Build-SavesPage {
   $script:restoreBackupButton=New-Button 'RESTORE SELECTED' 170; $script:restoreBackupButton.Location=New-Object Drawing.Point(355,405)
   $script:restoreBackupButton.Add_Click({
     try {
-      if (Get-Process -Name assault -ErrorAction SilentlyContinue) { throw 'Close the native game before restoring a save.' }
+      if (Get-RunningNativeGame) { throw 'Close the native game before restoring a save.' }
       if (-not $script:backupList.SelectedItem) { throw 'Select a backup first.' }
       $src=Get-BackupFilePath $script:backupList.SelectedItem
       $expectedSize = 4 * 1024 * 1024 / 8
@@ -1346,7 +1454,7 @@ function Build-SavesPage {
       $integrityText=if($expectedHash){'Backup checksum verified.'}else{'No saved checksum is available for this older backup; its current contents cannot be compared with the original snapshot.'}
       $answer=[Windows.Forms.MessageBox]::Show("Restore '$($meta.label)'?`r`n$([IO.Path]::GetFileName($src))`r`n$integrityText`r`n`r`nThe active card will first be backed up automatically.",'Restore memory card','YesNo','Warning')
       if ($answer -ne 'Yes') { return }
-      if (Get-Process -Name assault -ErrorAction SilentlyContinue) { throw 'The native game started while the restore confirmation was open. Close it and retry.' }
+      if (Get-RunningNativeGame) { throw 'The native game started while the restore confirmation was open. Close it and retry.' }
       if (Test-Path -LiteralPath $script:memcardPath -PathType Leaf) {
         $preLabel='Before restore · ' + (Get-Date -Format 'yyyy-MM-dd HH:mm')
         [void](New-SaveBackup $script:memcardPath $preLabel @('auto','pre-restore') 'automatic backup before restore' $false)
@@ -1476,7 +1584,7 @@ function Get-NativeModDirectories {
   return @()
 }
 function Install-NativeModPack([string]$zipPath) {
-  if (Get-Process -Name assault -ErrorAction SilentlyContinue) { throw 'Close the native game before changing its active asset pack.' }
+  if (Get-RunningNativeGame) { throw 'Close the native game before changing its active asset pack.' }
   $parent = Split-Path -Parent $script:nativeModsDir
   $stage = Join-Path $parent ('.stage-' + [Guid]::NewGuid().ToString('N'))
   $backupRoot = Join-Path $parent 'backups'
@@ -1551,7 +1659,7 @@ function Install-NativeModPack([string]$zipPath) {
   }
 }
 function Restore-PreviousNativeModPack {
-  if (Get-Process -Name assault -ErrorAction SilentlyContinue) { throw 'Close the native game before rolling back its active asset pack.' }
+  if (Get-RunningNativeGame) { throw 'Close the native game before rolling back its active asset pack.' }
   $previous = Get-NativeModDirectories | Select-Object -First 1
   if (-not $previous) { throw 'There is no previous native pack to restore.' }
   if (([IO.File]::GetAttributes($previous.FullName) -band [IO.FileAttributes]::ReparsePoint)) { throw 'The saved native pack is a reparse point; rollback was stopped safely.' }
@@ -1683,7 +1791,7 @@ function Build-SettingsPage {
   $script:volumeBox.BackColor=$script:colors.panel2; $script:volumeBox.ForeColor=$script:colors.text; $card.Controls.Add($script:volumeBox)
   $aspectBadge=New-Object Windows.Forms.Label; $aspectBadge.Text='F8   TOGGLE ASPECT'; $aspectBadge.Location=New-Object Drawing.Point($columnX[0],409); $aspectBadge.Size=New-Object Drawing.Size($columnWidth,24)
   $aspectBadge.TextAlign='MiddleCenter'; $aspectBadge.BackColor=$script:colors.selection; $aspectBadge.ForeColor=$script:colors.cyan
-  $aspectBadge.BorderStyle='FixedSingle'; $aspectBadge.Font=New-Object Drawing.Font('Bahnschrift SemiBold',9); $card.Controls.Add($aspectBadge)
+  $aspectBadge.BorderStyle='FixedSingle'; $aspectBadge.Font=New-Object Drawing.Font($script:headingFontName,9); $card.Controls.Add($aspectBadge)
   $filterNote=New-Label 'FXAA softens; Sharp + AA Off keeps text crisp.' 8 $false $script:colors.muted; $filterNote.AutoSize=$false; $filterNote.Size=New-Object Drawing.Size($columnWidth,30); $filterNote.Location=New-Object Drawing.Point($columnX[2],409); $card.Controls.Add($filterNote)
   $rendererRule=New-Object Windows.Forms.Panel; $rendererRule.Location=New-Object Drawing.Point(25,441); $rendererRule.Size=New-Object Drawing.Size($card.Width-50,1); $rendererRule.BackColor=$script:colors.line; $card.Controls.Add($rendererRule)
   $rendererLabel=New-Label 'RENDERER & PRESENTATION' 11 $true $script:colors.cyan; $rendererLabel.Location=New-Object Drawing.Point(25,454); $card.Controls.Add($rendererLabel)
