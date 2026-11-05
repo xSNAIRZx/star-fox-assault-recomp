@@ -14,6 +14,32 @@ jobs:
       - name: Windows scripts, runtime tests and host builds
         shell: powershell
         run: ./tools/Test-ReleaseHost.ps1
+      # Test-ReleaseHost rebuilds the launcher exe and the image inspector from source and
+      # packages a source-only host-check ZIP. Keep those exact bytes with their SHA-256 so a
+      # release can be traced to the commit and run that produced it. Contains no game content.
+      - name: Record build hashes
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @('Star Fox Assault Recomp.exe','user-data/verification/release-host-tool/assault-image-tool.exe')
+          $files += @(Get-ChildItem -LiteralPath 'user-data/releases' -Filter '*.zip' -File | ForEach-Object { 'user-data/releases/' + $_.Name })
+          if ($files.Count -lt 3) { throw 'Expected the launcher, the image inspector and a package ZIP.' }
+          $lines = foreach ($file in $files) { '{0}  {1}' -f (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant(),(Split-Path -Leaf $file) }
+          $header = "# Host-check build of $env:GITHUB_SHA (run $env:GITHUB_RUN_ID). Not a release; no game content."
+          [IO.File]::WriteAllLines((Join-Path $PWD 'build-hashes.txt'),[string[]](@($header) + $lines))
+          $fence = [string]::new([char]96,3)
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ((@('### Build hashes',$fence) + $lines + @($fence)) -join "`n")
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: host-check-build-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build-hashes.txt
+            Star Fox Assault Recomp.exe
+            user-data/verification/release-host-tool/assault-image-tool.exe
+            user-data/releases/*.zip
+            user-data/releases/*.zip.sha256
   portable:
     runs-on: ubuntu-latest
     timeout-minutes: 10
