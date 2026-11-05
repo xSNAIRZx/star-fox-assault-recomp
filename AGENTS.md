@@ -7,3 +7,4 @@
 - Use a clean publishing checkout and an explicit allowlist based on the package script or verified release archive. The development directory contains private and non-shareable files.
 - Keep releases experimental prereleases until the evidence supports a change. Disclose unresolved issues and validation limits accurately. Create or replace release assets only when an updated, tested package is needed; ordinary source changes do not require a new release.
 - Before pushing, inspect remote changes and preserve unrelated work. Do not routinely rewrite published history or retag releases.
+- Launcher improvement work is tracked in docs/launcher-goals.md. Read it before launcher changes and tick items there in the same PR as the change.
