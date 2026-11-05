@@ -2,6 +2,34 @@
 
 ## Continued correctness and controls work — 2026-11-04
 
+The reproduced boss object's position offsets become infinities while its actor
+and generation remain valid. The recorded route reproduced this transition in a
+same-build replay with no reported divergence through the selected snapshots:
+submitted 28364 (presented 28363) has finite offsets, submitted 29995 (presented
+29995) has infinite offsets and NaN transform fields. A selected presented-frame
+28364 PNG shows the boss still visible amid meteors. These game-derived snapshots
+are private and are never source or package payloads.
+
+A subsequent candidate implements CPU-local FPSCR NI result handling for scalar,
+paired and double arithmetic and single rounding. NI flushes tiny results to signed
+zero; loads, binary moves and reciprocal-estimate operands remain unchanged. The
+independently synthetic tiny-vector regression fails on the baseline and passes
+after correction. All 40 NI, 48 paired-sum, 288 comparison and 12,600 integer
+generated-code checks pass; 14/14 runtime tests and the full Windows host runner
+pass. Paired-sum flags now describe the sum lane, with copied lanes preserved.
+Full exception flags, arithmetic rounding modes and estimate fidelity remain limits.
+
+The NI candidate's clean native build SHA-256 is
+`44094fe32c5f82371fc7623c1edfdd852bec1d3a740c17ec5d692ba142f8272f`.
+A separate private build adds a narrow log-only normalizer trace. Replaying the
+recorded encounter is still required to establish whether NI handling repairs the
+boss; architecture tests alone do not establish that outcome.
+
+References: [MPC750 manual, table 2-21](https://www.nxp.com/docs/en/reference-manual/MPC750UM.pdf)
+and [Dolphin's documented single-result behavior](https://github.com/dolphin-emu/dolphin/blob/master/Source/Core/Core/PowerPC/Interpreter/Interpreter_FPUtils.h).
+The implementation is independently written; no Dolphin source or estimate tables
+were copied into this MIT project.
+
 **Gameplay reproduction obtained:** the updated diagnostic executable
 `374c659ae2e99d83f9c42f87b0322e74c098051132aa51fd63b99ad98aa875bc`
 reached the Winged Aparoid with a person playing. The boss was visibly present,

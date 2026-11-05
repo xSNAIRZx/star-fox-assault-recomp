@@ -1,5 +1,10 @@
 # Unreleased — 2026-11-04 controls and correctness checks
 
+- Honor CPU-local FPSCR NI result flushing, preserving signed zero; correct
+  paired-sum result flags and preserve copied lanes. Regression coverage includes
+  a tiny-vector normalization failure mechanism. The recorded boss encounter is
+  still the required gameplay gate; this is not a confirmed boss fix yet.
+
 - WASD movement with independent mouse Aim (C-stick), F9 capture/release and F10
   Flight steering. Captured Aim-mode left-click sends R for the game's Dual-Stick
   on-foot controls; released-mouse/Flight left-click sends A. Mode/capture status

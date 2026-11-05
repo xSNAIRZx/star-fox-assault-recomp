@@ -563,7 +563,7 @@ def translate59(pc, i, d, a, b, cc, rc):
         31: f'-fma({F(a)}, {F(cc)}, {F(b)})',
     }
     if xo in ops:
-        return f'{{ double v = (double)(float)({ops[xo]}); {F(d)} = v; {P1(d)} = v;{FPRF_S} }}' + cr1(rc)
+        return f'{{ double v = FP_SINGLE(c, {ops[xo]}); {F(d)} = v; {P1(d)} = v;{FPRF_S} }}' + cr1(rc)
     raise Unimpl(f'op59 xo {xo}')
 
 
@@ -582,15 +582,15 @@ def translate63(pc, i, d, a, b, cc, rc):
         31: f'-fma({F(a)}, {F(cc)}, {F(b)})',
     }
     if xo5 in ops5:
-        return f'{{ double v = {ops5[xo5]}; {F(d)} = v;{FPRF_D} }}' + cr1(rc)
+        return f'{{ double v = FP_DOUBLE(c, {ops5[xo5]}); {F(d)} = v;{FPRF_D} }}' + cr1(rc)
     if xo5 == 23:  # fsel
         return f'{F(d)} = ({F(a)} >= 0.0) ? {F(cc)} : {F(b)};' + cr1(rc)
     if xo5 == 22:  # fsqrt (not on gekko, but harmless)
-        return f'{{ double v = sqrt({F(b)}); {F(d)} = v;{FPRF_D} }}' + cr1(rc)
+        return f'{{ double v = FP_DOUBLE(c, sqrt({F(b)})); {F(d)} = v;{FPRF_D} }}' + cr1(rc)
     if xo in (0, 32):  # fcmpu, fcmpo
         return float_compare(d >> 2, F(a), F(b))
     if xo == 12:  # frsp
-        return f'{{ double v = (double)(float){F(b)}; {F(d)} = v; {P1(d)} = v;{FPRF_S} }}' + cr1(rc)
+        return f'{{ double v = FP_SINGLE(c, {F(b)}); {F(d)} = v; {P1(d)} = v;{FPRF_S} }}' + cr1(rc)
     if xo == 14:  # fctiw
         return f'c->f[{d}].u = 0xFFF8000000000000ull | (uint32_t)FCTIW(c, {F(b)});' + cr1(rc)
     if xo == 15:  # fctiwz
@@ -634,11 +634,14 @@ def translate4(pc, i, d, a, b, cc, rc):
     B0, B1 = F(b), P1(b)
     C0, C1 = F(cc), P1(cc)
 
-    def pair(e0, e1, rnd=True):
+    def pair(e0, e1, rnd=True, flag_lane=0, round_lanes=(True, True)):
         fprf = ''
         if rnd:
-            e0, e1 = f'(double)(float)({e0})', f'(double)(float)({e1})'
-            fprf = ' c->fprf_v = v0; c->fprf_pending = 2;'
+            if round_lanes[0]:
+                e0 = f'FP_SINGLE(c, {e0})'
+            if round_lanes[1]:
+                e1 = f'FP_SINGLE(c, {e1})'
+            fprf = f' c->fprf_v = v{flag_lane}; c->fprf_pending = 2;'
         return f'{{ double v0 = {e0}, v1 = {e1}; {F(d)} = v0; {P1(d)} = v1;{fprf} }}' + cr1(rc)
 
     if xo6 in (6, 7, 38, 39):  # psq_lx psq_stx psq_lux psq_stux
@@ -673,9 +676,9 @@ def translate4(pc, i, d, a, b, cc, rc):
     if xo5 == 31:
         return pair(f'-fma({A0}, {C0}, {B0})', f'-fma({A1}, {C1}, {B1})')
     if xo5 == 10:  # ps_sum0
-        return pair(f'{A0} + {B1}', C1)
+        return pair(f'{A0} + {B1}', C1, round_lanes=(True, False))
     if xo5 == 11:  # ps_sum1
-        return pair(C0, f'{A0} + {B1}')
+        return pair(C0, f'{A0} + {B1}', flag_lane=1, round_lanes=(False, True))
     if xo5 == 12:  # ps_muls0
         return pair(f'{A0} * {C0}', f'{A1} * {C0}')
     if xo5 == 13:
@@ -754,8 +757,8 @@ def translate_step(pc, i, x, p=1.0):
         A, B, C = F(a), F(b), F(cc)
         e = step_expr(xo5, A, B, C, x, S, pc, P)
         if op == 59:
-            return f'{{ double v = (double)(float)({e}); {F(d)} = v; {P1(d)} = v; }}' + cr1(rc)
-        return f'{F(d)} = {e};' + cr1(rc)
+            return f'{{ double v = FP_SINGLE(c, {e}); {F(d)} = v; {P1(d)} = v; }}' + cr1(rc)
+        return f'{F(d)} = FP_DOUBLE(c, {e});' + cr1(rc)
     if op == 4:
         xo5 = (i >> 1) & 0x1F
         A0, A1, B0, B1, C0, C1 = F(a), P1(a), F(b), P1(b), F(cc), P1(cc)
@@ -768,7 +771,7 @@ def translate_step(pc, i, x, p=1.0):
         else:
             e0 = step_expr(xo5, A0, B0, C0, x, S, pc, P)
             e1 = step_expr(xo5, A1, B1, C1, x, S, pc, P)
-        return (f'{{ double v0 = (double)(float)({e0}), v1 = (double)(float)({e1}); '
+        return (f'{{ double v0 = FP_SINGLE(c, {e0}), v1 = FP_SINGLE(c, {e1}); '
                 f'{F(d)} = v0; {P1(d)} = v1; }}' + cr1(rc))
     raise Unimpl(f'step op {op} x={x}')
 

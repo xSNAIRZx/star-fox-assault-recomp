@@ -24,5 +24,7 @@ jobs:
       - run: ctest --test-dir build-tests --output-on-failure --no-tests=error
       - run: python3 runtime/tests/ppc_integer_test.py --cc cc --work build-ppc-integer
       - run: python3 runtime/tests/ppc_fp_compare_test.py --cc cc --work build-ppc-fp-compare
+      - run: python3 runtime/tests/ppc_paired_sum_test.py --cc cc --work build-ppc-paired-sum
+      - run: python3 runtime/tests/ppc_non_ieee_test.py --cc cc --work build-ppc-non-ieee
       - run: cmake -S runtime/tools/native -B build-host -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build-host --parallel 4

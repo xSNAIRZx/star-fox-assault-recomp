@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <math.h>
+#include <float.h>
 #include <setjmp.h>
 
 #ifdef __cplusplus
@@ -290,6 +291,22 @@ static inline uint8_t fcmp(double a, double b) {
     return 1;
 }
 #define FCMP(a, b) fcmp((a), (b))
+
+/* CPU-local non-IEEE result handling (FPSCR[NI], bit 29). Do not change the
+   host floating-point environment: rendering/audio run on other host threads.
+   Gekko's single conversion flushes a tiny result before rounding, including
+   one immediately below FLT_MIN which IEEE rounding would promote to normal.
+   Loads, moves and reciprocal-estimate operands are deliberately not flushed. */
+static inline double FP_SINGLE(CPU* c, double value) {
+    if ((c->fpscr & 4u) && fabs(value) < (double)FLT_MIN)
+        return copysign(0.0, value);
+    return (double)(float)value;
+}
+static inline double FP_DOUBLE(CPU* c, double value) {
+    if ((c->fpscr & 4u) && fabs(value) < DBL_MIN)
+        return copysign(0.0, value);
+    return value;
+}
 
 static inline int32_t FCTIWZ(double d) {
     if (d != d) return INT32_MIN;
