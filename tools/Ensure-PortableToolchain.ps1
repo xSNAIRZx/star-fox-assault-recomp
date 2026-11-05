@@ -19,13 +19,41 @@ if($manifest.schema_version -ne 1){throw 'Unsupported portable toolchain manifes
 function Test-Cancel {
   if($CancelFile -and (Test-Path -LiteralPath $CancelFile)){throw [OperationCanceledException]::new('Build cancelled.')}
 }
-function Write-ToolStatus([string]$message){
-  Write-Host $message
+function Write-ToolStatus([string]$message,[switch]$Quiet){
+  if(-not $Quiet){Write-Host $message}
   if($ProgressFile){
     [void][IO.Directory]::CreateDirectory((Split-Path -Parent ([IO.Path]::GetFullPath($ProgressFile))))
     $status=[ordered]@{schema_version=1;state='running';phase='Preparing build tools';message=$message;percent=$null;executable=$null}
     [IO.File]::WriteAllText($ProgressFile,($status | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
   }
+}
+function Format-DownloadSize([long]$bytes){([double]$bytes/1MB).ToString('0.0',[Globalization.CultureInfo]::InvariantCulture)}
+# Streams the download so the launcher can show megabytes received and cancel between chunks.
+function Save-ToolDownload([Uri]$uri,[string]$destination,[string]$label){
+  $request=[Net.HttpWebRequest]::Create($uri)
+  $request.Timeout=30000;$request.ReadWriteTimeout=60000;$request.AllowAutoRedirect=$true;$request.UserAgent='PeregrineForge-Toolchain'
+  $response=$request.GetResponse()
+  try {
+    $total=[long]$response.ContentLength
+    $body=$response.GetResponseStream()
+    $output=[IO.File]::Open($destination,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+      $buffer=New-Object byte[] 262144
+      $received=[long]0;$lastReport=[DateTime]::MinValue
+      while(($read=$body.Read($buffer,0,$buffer.Length)) -gt 0){
+        $output.Write($buffer,0,$read);$received+=$read
+        $now=[DateTime]::UtcNow
+        if(($now-$lastReport).TotalMilliseconds -ge 500){
+          Test-Cancel
+          $sizeText=if($total -gt 0){'{0} of {1} MB' -f (Format-DownloadSize $received),(Format-DownloadSize $total)}else{'{0} MB' -f (Format-DownloadSize $received)}
+          Write-ToolStatus ("Downloading {0}: {1}" -f $label,$sizeText) -Quiet
+          $lastReport=$now
+        }
+      }
+      if($total -gt 0 -and $received -ne $total){throw "The $label download ended early ($received of $total bytes)."}
+      Write-Host ("Downloaded {0} ({1} MB)" -f $label,(Format-DownloadSize $received))
+    } finally {$output.Dispose();$body.Dispose()}
+  } finally {$response.Dispose()}
 }
 function Test-Inside([string]$path){
   $full=[IO.Path]::GetFullPath($path)
@@ -82,16 +110,12 @@ function Install-Tool($tool){
     Write-ToolStatus ("Downloading {0} {1} from its official release..." -f $tool.id,$tool.version)
     $partial=$archive+'.partial-'+[guid]::NewGuid().ToString('N')
     [Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    $client=[Net.WebClient]::new()
     try {
-      $task=$client.DownloadFileTaskAsync($uri,$partial)
-      while(-not $task.IsCompleted){Test-Cancel;Start-Sleep -Milliseconds 150}
-      $task.GetAwaiter().GetResult()
+      Save-ToolDownload $uri $partial ("{0} {1}" -f $tool.id,$tool.version)
       Test-Cancel
       if((Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash -ne $tool.sha256){throw "SHA-256 verification failed for $($tool.id)."}
       Move-Item -LiteralPath $partial -Destination $archive
     } finally {
-      $client.CancelAsync();$client.Dispose()
       if(Test-Path -LiteralPath $partial){Remove-Item -LiteralPath $partial -Force}
     }
   }

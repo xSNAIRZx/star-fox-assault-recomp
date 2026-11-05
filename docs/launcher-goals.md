@@ -8,6 +8,7 @@ Tick items here as they land, in the same PR as the change.
 
 - **Done:** Tier 1 reliability fixes, heading-font fallback and a GitHub bug-report form ([PR #1](https://github.com/xSNAIRZx/star-fox-assault-recomp/pull/1)). CI now keeps the launcher exe, image inspector and host-check ZIP with SHA-256 as a 30-day workflow artifact ([PR #2](https://github.com/xSNAIRZx/star-fox-assault-recomp/pull/2)).
 - **Not yet verified on a desktop:** PR #1 passed hosted Windows CI (PowerShell 5.1 parse, 110-path launcher audit, update tests) but the launcher window itself has not been opened with these changes. Check before calling them verified: switch pages; install a local ZIP (window stays responsive); corrupt `settings.json` once (expect a status notice and a `settings.corrupt-*.json` copy); launch with a controls file in a path containing spaces.
+- **Also done, 2026-11-05:** build pre-flight, readable build failures, phase timing and download sizes (Tier 2), and the single settings schema in `tools/LauncherCore.ps1` with its tests (Tier 3). The launcher window starts with these changes; the pre-flight dialog, failure view and download text still need a desktop check with a real build.
 - **Next:** ship rc.4 (step 2 of the order below).
 - **Open decision:** keep the launcher UI in PowerShell or port it to C#. Decide before the Tier 3 module split.
 
@@ -33,9 +34,9 @@ Main weak spots: every control is placed with absolute pixel coordinates (DPI an
 
 ## Tier 2 — UX and first run
 
-- [ ] Pre-flight check before Import & Build: free disk (warn under 3 GB), internet reachability, path length, writable folder.
-- [ ] Readable build failures: show the failing stage and top error from `stderr.log`, with Open log and Copy report buttons.
-- [ ] Show elapsed time per phase and MB downloaded in the build dialog.
+- [x] Pre-flight check before Import & Build: free disk (blocks under 3 GB, as the build worker would fail), writable folder, download-host reachability when tools are not cached, path-length warning when Windows long paths are off.
+- [x] Readable build failures: show the failing stage and first errors from the worker's `stdout.log`/`stderr.log`, with Open log, Copy report (paths redacted) and Open job folder buttons.
+- [x] Show elapsed time per phase and MB downloaded in the build dialog.
 - [ ] One-click controller binding ("press the button for A now") with a live test view, replacing detect → close → reload.
 - [ ] Visually verify every page at 100%, 125% and 150% scaling and at 1180×720.
 - [x] Fall back to Segoe UI Semibold when Bahnschrift is not installed.
@@ -47,11 +48,11 @@ Main weak spots: every control is placed with absolute pixel coordinates (DPI an
 
 - [ ] Decide PowerShell vs C# for the launcher UI. C# (WinForms or WPF on .NET Framework 4.8) gives async/await, data binding, faster startup and a debugger; keep the build worker in PowerShell.
 - [ ] Split the script into modules: settings, native build/status, game launch, one file per page. Logic modules must not touch WinForms.
-- [ ] Unit-test the logic modules with Pester (settings round-trip and corruption, status branches, argument escaping, phase-to-percent mapping) and add them to `tools/Test-ReleaseHost.ps1`.
+- [ ] Unit-test the logic modules with Pester (settings round-trip and corruption, status branches, argument escaping, phase-to-percent mapping) and add them to `tools/Test-ReleaseHost.ps1`. Started: `tools/Test-LauncherCore.ps1` (plain PowerShell, since Windows PowerShell 5.1 ships Pester 3.4 and CI has 5.x) covers settings, escaping, phase mapping, pre-flight rules and failure reports and runs in host checks. Native status branches are not covered yet.
 - [ ] Replace absolute layout with `TableLayoutPanel`/`FlowLayoutPanel`, anchors and padding.
 - [ ] Build each page once and refresh data, instead of disposing and rebuilding on every switch.
 - [ ] Replace the hidden `Track-Session.ps1` process with a `Process.Exited` handler or a session record written by the game.
-- [ ] Define settings defaults and allowed values once, used by both the loader and `Get-NativeGraphicsArguments`.
+- [x] Define settings defaults and allowed values once, used by both the loader and `Get-NativeGraphicsArguments` (`$LauncherSettingSchema` in `tools/LauncherCore.ps1`; the Settings page reads its value lists from it too).
 
 ## Tier 4 — Distribution, trust and release
 

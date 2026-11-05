@@ -9,7 +9,7 @@ function Invoke-Checked([string]$program,[string[]]$arguments) {
 # Run each script in its own process: some scripts use exit, and native failure
 # must never be masked by a later successful command or an empty CTest run.
 $shell=Join-Path $env:WINDIR 'System32/WindowsPowerShell/v1.0/powershell.exe'
-$scripts=@('Test-LauncherTools.ps1','Test-BuildCacheSignature.ps1','Test-GameplayCapture.ps1','Test-NativeCheck.ps1')
+$scripts=@('Test-LauncherTools.ps1','Test-LauncherCore.ps1','Test-BuildCacheSignature.ps1','Test-GameplayCapture.ps1','Test-NativeCheck.ps1')
 foreach($file in @((Join-Path $project 'Launch-StarFoxAssault.ps1'))+@(Get-ChildItem $PSScriptRoot -Filter '*.ps1' -File | ForEach-Object FullName)){
   $tokens=$null; $errors=$null
   [void][Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errors)

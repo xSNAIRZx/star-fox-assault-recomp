@@ -82,7 +82,7 @@ foreach ($list in $lists) {
 }
 
 # The launcher's own dependencies must be required by both lists, not merely present.
-$launcherNeeds = @('tools/Install-PrototypeUpdate.ps1','tools/Track-Session.ps1',
+$launcherNeeds = @('tools/Install-PrototypeUpdate.ps1','tools/Track-Session.ps1','tools/LauncherCore.ps1',
   'tools/portable-toolchain.json','runtime/recomp/rel.py','runtime/recomp/dol.py')
 foreach ($needed in $launcherNeeds) {
   foreach ($list in $lists) {

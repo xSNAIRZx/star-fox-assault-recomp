@@ -1,3 +1,19 @@
+# Unreleased — 2026-11-05 launcher build flow and settings
+
+- Import & Build first checks free disk space (3 GB), that the launcher folder is
+  writable, that the tool download hosts are reachable when tools are not yet
+  cached, and warns about long folder paths when Windows long paths are off.
+- A failed build now names the stage that failed and its first error lines, with
+  Open log, Copy report (private paths replaced) and Open job folder buttons.
+- The build dialog shows elapsed time for the current phase and the whole build,
+  and tool downloads report megabytes received. Step 2 (preparing tools) now shows
+  its step number; the toolchain script's phase name was not recognised before.
+- Profile settings are defined once (type, default, allowed values) in
+  `tools/LauncherCore.ps1` and used by the loader, the Settings page and the
+  native arguments. `tools/Test-LauncherCore.ps1` covers that logic in host checks.
+- Not yet checked in the launcher window on a desktop with a real build: the
+  pre-flight dialog, the failure view and the download progress text.
+
 # Unreleased — 2026-11-04 controls and correctness checks
 
 - Honor CPU-local FPSCR NI result flushing, preserving signed zero; correct

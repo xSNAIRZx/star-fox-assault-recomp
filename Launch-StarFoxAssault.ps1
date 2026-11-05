@@ -38,28 +38,21 @@ if ($script:portableMode -and -not (Test-Path -LiteralPath $script:settingsPath 
   try { Copy-Item -LiteralPath $script:legacySettingsPath -Destination $script:settingsPath -ErrorAction Stop } catch {}
 }
 
-$script:settings = [ordered]@{
-  disc = ''
-  dolphin = ''
-  scale = 2
-  muteMusic = $false
-  inputLog = $false
-  controls = ''
-  nativeMods = $false
-  fullscreen = $false
-  vsync = $false
-  volume = 100
-  aspect = 'original'
-  aa = 'off'
-  filter = 'sharp'
-  deadzone = ''
+# Settings schema, build progress, pre-flight and failure-report logic. Kept free of WinForms
+# so tools/Test-LauncherCore.ps1 can test it without opening this window.
+$launcherCorePath = Join-Path $script:projectDir 'tools\LauncherCore.ps1'
+if (-not (Test-Path -LiteralPath $launcherCorePath -PathType Leaf)) {
+  [Windows.Forms.MessageBox]::Show(('A launcher file is missing: {0}{1}{1}Reinstall the complete launcher package.' -f $launcherCorePath,[Environment]::NewLine),'Peregrine Forge','OK','Error') | Out-Null
+  exit 1
 }
+. $launcherCorePath
+
+$script:settings = Get-LauncherSettingDefaults
 if (Test-Path -LiteralPath $script:settingsPath) {
   try {
     $saved = Get-Content -LiteralPath $script:settingsPath -Raw | ConvertFrom-Json
-    foreach ($key in @('disc','dolphin','scale','muteMusic','inputLog','controls','nativeMods','fullscreen','vsync','volume','aspect','aa','filter','deadzone')) {
-      if ($null -ne $saved.$key) { $script:settings[$key] = $saved.$key }
-    }
+    if ($null -eq $saved) { throw 'The settings file is empty.' }
+    $script:settings = Read-LauncherSettings $saved
   } catch {
     # Keep the unreadable profile for inspection instead of silently overwriting it on the
     # next save, and tell the user once the window is up.
@@ -71,31 +64,21 @@ if (Test-Path -LiteralPath $script:settingsPath) {
     } catch {}
   }
 }
+# Read-LauncherSettings has already replaced every missing or invalid value with its default.
 $script:discValue = [string]$script:settings.disc
 $script:dolphinValue = [string]$script:settings.dolphin
 $script:controlsValue = [string]$script:settings.controls
-$script:scaleValue = 2.0
-try { $script:scaleValue = [Convert]::ToDouble($script:settings.scale,[Globalization.CultureInfo]::InvariantCulture) } catch {}
-if ($script:scaleValue -notin @(0.0,1.0,1.5,2.0,3.0,4.0,6.0)) { $script:scaleValue = 2.0 }
+$script:scaleValue = [double]$script:settings.scale
 $script:aspectValue = [string]$script:settings.aspect
-if ($script:aspectValue -notin @('original','widescreen','stretch')) { $script:aspectValue = 'original' }
 $script:aaValue = [string]$script:settings.aa
-if ($script:aaValue -notin @('off','fxaa')) { $script:aaValue = 'off' }
 $script:filterValue = [string]$script:settings.filter
-if ($script:filterValue -notin @('sharp','smooth')) { $script:filterValue = 'sharp' }
-# Empty leaves the runtime's own per-axis thresholds alone, which is what a profile saved
-# before this setting existed should keep using.
 $script:deadzoneValue = [string]$script:settings.deadzone
-if ($script:deadzoneValue -notin @('','0','5','10','15','20','30')) { $script:deadzoneValue = '' }
 $script:muteValue = [bool]$script:settings.muteMusic
 $script:logValue = [bool]$script:settings.inputLog
 $script:nativeModsValue = [bool]$script:settings.nativeMods
 $script:fullscreenValue = [bool]$script:settings.fullscreen
 $script:vsyncValue = [bool]$script:settings.vsync
-# A hand-edited or half-written profile must not stop the launcher from opening, so a
-# volume that is not a number falls back to the default like the other values above.
-$script:volumeValue = 100
-try { $script:volumeValue = [Math]::Max(0,[Math]::Min(100,[int]$script:settings.volume)) } catch { $script:volumeValue = 100 }
+$script:volumeValue = [int]$script:settings.volume
 
 $script:colors = @{
   base = [Drawing.Color]::FromArgb(4,11,15)
@@ -362,11 +345,6 @@ function Test-GameImage {
   if (-not $info.valid -or $info.game_id -ne 'GF7E01') { throw "This is $($info.internal_name) ($($info.game_id)). The native build expects Star Fox Assault USA (GF7E01)." }
   return $info
 }
-function ConvertTo-NativeArgument([string]$value) {
-  $escaped = $value -replace '(\\*)"','$1$1\"'
-  $escaped = $escaped -replace '(\\+)$','$1$1'
-  return '"' + $escaped + '"'
-}
 function Get-PlaytimeText {
   $seconds = 0.0
   $historyDir = Join-Path $script:projectDir 'user-data\play-history'
@@ -465,14 +443,7 @@ function Start-NativeGame {
   } catch { Set-Status $_.Exception.Message }
 }
 function Get-NativeGraphicsArguments {
-  $scaleText = ([double]$script:scaleValue).ToString('0.##',[Globalization.CultureInfo]::InvariantCulture)
-  $aspect = [string]$script:aspectValue
-  if ($aspect -notin @('original','widescreen','stretch')) { $aspect = 'original' }
-  $aa = [string]$script:aaValue
-  if ($aa -notin @('off','fxaa')) { $aa = 'off' }
-  $filter = [string]$script:filterValue
-  if ($filter -notin @('sharp','smooth')) { $filter = 'sharp' }
-  return @("--scale=$scaleText", "--aspect=$aspect", "--aa=$aa", "--filter=$filter")
+  return Get-NativeGraphicsArgumentList $script:scaleValue $script:aspectValue $script:aaValue $script:filterValue
 }
 function Start-DolphinGame {
   try {
@@ -484,12 +455,34 @@ function Start-DolphinGame {
     Set-Status "Opened the original CISO directly in Dolphin · $($info.game_id)" $true
   } catch { Set-Status $_.Exception.Message }
 }
+# Checks the things that would otherwise fail minutes into a build. Returns $true to go ahead.
+function Confirm-BuildPreflight {
+  if ($script:form) { $script:form.UseWaitCursor = $true }
+  Set-Status 'Checking disk space, folder access and tool downloads…' $true
+  try { $issues = Get-BuildPreflightIssues (Get-BuildPreflightFacts $script:projectDir) }
+  finally { if ($script:form) { $script:form.UseWaitCursor = $false } }
+  if (-not $issues.Count) { return $true }
+  $blocking = @($issues | Where-Object { $_.Severity -eq 'block' })
+  $lines = ($issues | ForEach-Object { '• ' + $_.Message }) -join ([Environment]::NewLine + [Environment]::NewLine)
+  if ($blocking.Count) {
+    Set-Status ('Build not started · {0}' -f $blocking[0].Message)
+    [Windows.Forms.MessageBox]::Show($script:form,$lines,'Build cannot start yet','OK','Warning') | Out-Null
+    return $false
+  }
+  $answer = [Windows.Forms.MessageBox]::Show($script:form,($lines + [Environment]::NewLine + [Environment]::NewLine + 'Start the build anyway?'),'Before you build','YesNo','Warning','Button2')
+  if ($answer -ne [Windows.Forms.DialogResult]::Yes) { Set-Status 'Build not started.'; return $false }
+  return $true
+}
+function Get-LauncherVersionText {
+  try { return [string]((Get-Content -LiteralPath (Join-Path $script:projectDir 'release.json') -Raw | ConvertFrom-Json).version) } catch { return 'unknown' }
+}
 function Start-NativeBuild {
   try {
     $null = Test-GameImage $script:discValue
     Save-Settings
     if ($script:buildState.Process -and -not $script:buildState.Process.HasExited) { Set-Status 'A native build is already running.'; return }
     if ($script:updateState.Process -and -not $script:updateState.Process.HasExited) { Set-Status 'Wait for the local package update to finish before building.'; return }
+    if (-not (Confirm-BuildPreflight)) { return }
     $buildScript = Join-Path $script:projectDir 'tools\Build-StarFoxAssault.ps1'
     if (-not (Test-Path -LiteralPath $buildScript -PathType Leaf)) { throw 'The native build script is missing from this launcher package.' }
     $jobId = '{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff'),([Guid]::NewGuid().ToString('N'))
@@ -521,10 +514,26 @@ function Start-NativeBuild {
     $bar = New-Object Windows.Forms.ProgressBar; $bar.Location = New-Object Drawing.Point(27,94); $bar.Size = New-Object Drawing.Size(640,26)
     $bar.Style = 'Marquee'; $bar.MarqueeAnimationSpeed = 24; $bar.ForeColor = $script:colors.cyan; $dialog.Controls.Add($bar)
     $progressText = New-Label 'STEP 1 OF 5  ·  CHECKING GAME IMAGE' 9 $true $script:colors.cyan
-    $progressText.Location = New-Object Drawing.Point(27,130); $progressText.Size = New-Object Drawing.Size(500,22); $dialog.Controls.Add($progressText)
+    $progressText.AutoSize = $false; $progressText.Location = New-Object Drawing.Point(27,130); $progressText.Size = New-Object Drawing.Size(400,22); $dialog.Controls.Add($progressText)
+    $timeText = New-Label 'TOTAL 0:00' 9 $false $script:colors.muted
+    $timeText.AutoSize = $false; $timeText.TextAlign = 'MiddleRight'; $timeText.Location = New-Object Drawing.Point(430,130); $timeText.Size = New-Object Drawing.Size(237,22); $dialog.Controls.Add($timeText)
     $safetyText = New-Label 'The original game image and existing saves are kept unchanged.' 9 $false $script:colors.muted
     $safetyText.Location = New-Object Drawing.Point(27,164); $safetyText.Size = New-Object Drawing.Size(490,22); $dialog.Controls.Add($safetyText)
     $cancel = New-Button 'CANCEL BUILD' 135; $cancel.Location = New-Object Drawing.Point(532,163); $dialog.Controls.Add($cancel)
+    # Shown only when the build fails: the stage, the first errors and ways to share them.
+    $errorBox = New-Object Windows.Forms.TextBox; $errorBox.Multiline = $true; $errorBox.ReadOnly = $true; $errorBox.WordWrap = $true; $errorBox.ScrollBars = 'Vertical'
+    $errorBox.Location = New-Object Drawing.Point(27,206); $errorBox.Size = New-Object Drawing.Size(640,150); $errorBox.BorderStyle = 'FixedSingle'
+    $errorBox.BackColor = $script:colors.panel2; $errorBox.ForeColor = $script:colors.text; $errorBox.Font = New-Object Drawing.Font('Consolas',9); $errorBox.Visible = $false; $dialog.Controls.Add($errorBox)
+    $openLog = New-Button 'OPEN LOG' 125; $openLog.Location = New-Object Drawing.Point(27,368); $openLog.Visible = $false; $dialog.Controls.Add($openLog)
+    $copyReport = New-Button 'COPY REPORT' 140; $copyReport.Location = New-Object Drawing.Point(164,368); $copyReport.Visible = $false; $dialog.Controls.Add($copyReport)
+    $openJob = New-Button 'OPEN JOB FOLDER' 165; $openJob.Location = New-Object Drawing.Point(316,368); $openJob.Visible = $false; $dialog.Controls.Add($openJob)
+    $track = @{ Start = [DateTime]::UtcNow; PhaseKey = ''; PhaseStart = [DateTime]::UtcNow; LastActivePhase = ''; Report = '' }
+    $openLog.Add_Click({ try { Start-Process -FilePath (Join-Path $env:SystemRoot 'notepad.exe') -ArgumentList (ConvertTo-NativeArgument $stdoutPath) | Out-Null } catch { $detail.Text = $_.Exception.Message } }.GetNewClosure())
+    $openJob.Add_Click({ Open-Folder $jobDir }.GetNewClosure())
+    $copyReport.Add_Click({
+      try { [Windows.Forms.Clipboard]::SetText($track.Report); $copyReport.Text = 'COPIED' }
+      catch { $detail.Text = 'Could not copy the report: ' + $_.Exception.Message }
+    }.GetNewClosure())
     $cancel.Add_Click({ if($cancel.Tag -eq 'finished'){$dialog.Close();return}; try { [IO.File]::WriteAllText($cancelPath,'cancel',[Text.Encoding]::ASCII); $cancel.Enabled = $false; $message.Text = 'Cancellation requested; cleaning up the build…' } catch { $detail.Text = $_.Exception.Message } }.GetNewClosure())
     $buildState = $script:buildState
     $statusLabel = $script:statusLabel
@@ -545,25 +554,19 @@ function Start-NativeBuild {
         if (Test-Path -LiteralPath $statusPath -PathType Leaf) {
           try { $state = Get-Content -LiteralPath $statusPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch {}
         }
+        $now = [DateTime]::UtcNow
         if ($state) {
           $message.Text = [string]$state.message
           $detail.Text = [string]$state.phase
           $phaseName = [string]$state.phase
-          $step = switch -Regex ($phaseName) {
-            '^Checking image$' { 1; break }
-            '^Preparing tools$' { 2; break }
-            '^Recompiling game$|^Using build cache$' { 3; break }
-            '^Compiling native executable$' { 4; break }
-            '^Installing native build$|^Ready to play$' { 5; break }
-            '^Cancelled$|^Build failed$' { 0; break }
-            default { 0 }
-          }
+          $step = Get-BuildPhaseStep $phaseName
+          # Both tool-preparation phase names are step 2, so they share one phase timer.
+          $phaseKey = if ($step -gt 0) { 'step' + $step } else { $phaseName }
+          if ($phaseKey -ne $track.PhaseKey) { $track.PhaseKey = $phaseKey; $track.PhaseStart = $now }
+          if ($step -gt 0 -and $phaseName -ne 'Ready to play') { $track.LastActivePhase = $phaseName }
           $stepText = if($step -gt 0){'STEP {0} OF 5  ·  {1}' -f $step,$phaseName.ToUpperInvariant()}else{$phaseName.ToUpperInvariant()}
           if ($null -ne $state.percent) {
-            $rawPercent = [Math]::Max(0,[Math]::Min(100,[double]$state.percent))
-            if ($phaseName -eq 'Recompiling game') { $overallPercent = 35 + [int]($rawPercent * 0.30) }
-            elseif ($phaseName -eq 'Compiling native executable') { $overallPercent = 68 + [int]($rawPercent * 0.25) }
-            else { $overallPercent = [int]$rawPercent }
+            $overallPercent = Get-BuildOverallPercent $phaseName $state.percent
             $bar.Style='Continuous'; $bar.Value=[Math]::Max($bar.Value,[Math]::Min(99,$overallPercent))
             $progressText.Text = '{0}  ·  {1}%' -f $stepText,$overallPercent
           } else {
@@ -571,7 +574,9 @@ function Start-NativeBuild {
             $progressText.Text = if($step -gt 0){$stepText + '  ·  WORKING'}else{$stepText}
           }
         }
+        $timeText.Text = if ($track.PhaseKey) { 'PHASE {0}  ·  TOTAL {1}' -f (Format-Elapsed ($now - $track.PhaseStart)),(Format-Elapsed ($now - $track.Start)) } else { 'TOTAL ' + (Format-Elapsed ($now - $track.Start)) }
         if ($buildState.Process.HasExited) {
+          $timeText.Text = 'TOTAL ' + (Format-Elapsed ($now - $track.Start))
           $timer.Stop(); $timer.Dispose()
           $buildState.Process.WaitForExit()
           $buildState.Process.Refresh()
@@ -582,9 +587,36 @@ function Start-NativeBuild {
           if ($success) { $message.Text='Native build completed'; $detail.Text='The game image and existing saves were left unchanged.'; $bar.Style='Continuous'; $bar.MarqueeAnimationSpeed=0; $bar.Value=100; $progressText.Text='BUILD COMPLETE  ·  100%'; $progressText.ForeColor=$colors.green; $statusLabel.Text='Native build ready.'; $statusLabel.ForeColor=$colors.green; Reset-NativeStatusCache; if($navButtons.ContainsKey('Home')){Build-PageRefresh} }
           else {
             $phase = if($state -and $state.state -in @('failed','cancelled')){[string]$state.state}else{'worker stopped'}
-            $message.Text = if($phase -eq 'cancelled'){'Build cancelled'}else{'Build did not complete'}
-            $detail.Text = "Details are saved in $jobDir"
             $bar.Style='Continuous'; $bar.MarqueeAnimationSpeed=0; $progressText.Text=if($phase -eq 'cancelled'){'BUILD CANCELLED'}else{'BUILD FAILED'}; $progressText.ForeColor=$colors.red
+            if ($phase -eq 'cancelled') {
+              $message.Text = 'Build cancelled'
+              $detail.Text = "Details are saved in $jobDir"
+            } else {
+              # Name the stage that failed and its first errors, instead of only a folder path.
+              $failedPhase = if ($track.LastActivePhase) { $track.LastActivePhase } else { 'Starting the build worker' }
+              $reason = if ($state -and $state.state -eq 'failed' -and $state.message) { [string]$state.message } else { "The build worker stopped (exit $exitCode) without reporting a result." }
+              $stdoutLines = @(); $stderrLines = @()
+              try { $stdoutLines = [IO.File]::ReadAllLines($stdoutPath) } catch {}
+              try { $stderrLines = [IO.File]::ReadAllLines($stderrPath) } catch {}
+              $errorLines = Get-BuildErrorLines $stdoutLines $stderrLines
+              $message.Text = 'Build failed while: ' + $failedPhase.ToLowerInvariant()
+              $detail.Text = $reason
+              $nl = [Environment]::NewLine
+              $errorText = if ($errorLines.Count) { 'First errors:' + $nl + (($errorLines | ForEach-Object { '  ' + $_ }) -join $nl) } else { 'No compiler or tool error line was recognised; open the log for the full output.' }
+              $errorBox.Text = $errorText + $nl + $nl + 'Full logs: ' + $jobDir
+              $tail = @($stdoutLines | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Last 30) + @($stderrLines | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Last 10)
+              $replacements = @{}
+              if ($script:discValue) { $replacements[[string]$script:discValue] = '<game image>' }
+              $replacements[[string]$script:projectDir] = '<launcher folder>'
+              if ($env:USERPROFILE) { $replacements[[string]$env:USERPROFILE] = '%USERPROFILE%' }
+              $track.Report = New-BuildFailureReport @{
+                Version = (Get-LauncherVersionText); OsVersion = [Environment]::OSVersion.VersionString
+                Phase = $failedPhase; Message = $reason; ExitCode = $exitCode
+                Elapsed = (Format-Elapsed ($now - $track.Start)); Errors = $errorLines; Tail = $tail
+              } $replacements
+              $dialog.Size = New-Object Drawing.Size(700,460)
+              $errorBox.Visible = $true; $openLog.Visible = $true; $copyReport.Visible = $true; $openJob.Visible = $true
+            }
             $statusLabel.Text=('{0} · state {1}, exit {2}, output {3}' -f $message.Text,$phase,$exitCode,$nativeOutputExists); $statusLabel.ForeColor=$colors.muted
           }
           $cancel.Text='CLOSE'; $cancel.Enabled=$true; $cancel.Tag='finished'
@@ -1756,31 +1788,31 @@ function Build-SettingsPage {
   $scaleLabel=New-Label 'INTERNAL RESOLUTION' 8 $true $script:colors.muted; $scaleLabel.Location=New-Object Drawing.Point($columnX[0],282); $card.Controls.Add($scaleLabel)
   $script:scaleBox=New-Object Windows.Forms.ComboBox; $script:scaleBox.DropDownStyle='DropDownList'
   $script:scaleBox.Items.AddRange([object[]]@('Auto / match window','1x','1.5x','2x','3x','4x','6x'))
-  $scaleValues=[double[]]@(0.0,1.0,1.5,2.0,3.0,4.0,6.0)
+  $scaleValues=[double[]](Get-LauncherSettingAllowed 'scale')
   $script:scaleBox.SelectedIndex=[Array]::IndexOf($scaleValues,[double]$script:scaleValue); if($script:scaleBox.SelectedIndex -lt 0){$script:scaleBox.SelectedIndex=3}
   $script:scaleBox.Location=New-Object Drawing.Point($columnX[0],306); $script:scaleBox.Size=New-Object Drawing.Size($columnWidth,30)
   Set-DarkComboBox $script:scaleBox; $card.Controls.Add($script:scaleBox)
   $aspectLabel=New-Label 'ASPECT RATIO' 8 $true $script:colors.muted; $aspectLabel.Location=New-Object Drawing.Point($columnX[1],282); $card.Controls.Add($aspectLabel)
   $script:aspectBox=New-Object Windows.Forms.ComboBox; $script:aspectBox.DropDownStyle='DropDownList'
   $script:aspectBox.Items.AddRange([object[]]@('Original 4:3','Widescreen 16:9 (experimental)','Fill window (stretch)'))
-  $aspectValues=@('original','widescreen','stretch'); $script:aspectBox.SelectedIndex=[Array]::IndexOf($aspectValues,$script:aspectValue); if($script:aspectBox.SelectedIndex -lt 0){$script:aspectBox.SelectedIndex=0}
+  $aspectValues=Get-LauncherSettingAllowed 'aspect'; $script:aspectBox.SelectedIndex=[Array]::IndexOf($aspectValues,$script:aspectValue); if($script:aspectBox.SelectedIndex -lt 0){$script:aspectBox.SelectedIndex=0}
   $script:aspectBox.Location=New-Object Drawing.Point($columnX[1],306); $script:aspectBox.Size=New-Object Drawing.Size($columnWidth,30)
   Set-DarkComboBox $script:aspectBox; $card.Controls.Add($script:aspectBox)
   $aaLabel=New-Label 'ANTI-ALIASING' 8 $true $script:colors.muted; $aaLabel.Location=New-Object Drawing.Point($columnX[2],282); $card.Controls.Add($aaLabel)
   $script:aaBox=New-Object Windows.Forms.ComboBox; $script:aaBox.DropDownStyle='DropDownList'; $script:aaBox.Items.AddRange([object[]]@('Off','FXAA'))
-  $script:aaBox.SelectedIndex=[Array]::IndexOf(@('off','fxaa'),$script:aaValue); if($script:aaBox.SelectedIndex -lt 0){$script:aaBox.SelectedIndex=0}
+  $script:aaBox.SelectedIndex=[Array]::IndexOf((Get-LauncherSettingAllowed 'aa'),$script:aaValue); if($script:aaBox.SelectedIndex -lt 0){$script:aaBox.SelectedIndex=0}
   $script:aaBox.Location=New-Object Drawing.Point($columnX[2],306); $script:aaBox.Size=New-Object Drawing.Size($columnWidth,30)
   Set-DarkComboBox $script:aaBox; $card.Controls.Add($script:aaBox)
   $filterLabel=New-Label 'OUTPUT FILTER' 8 $true $script:colors.muted; $filterLabel.Location=New-Object Drawing.Point($columnX[0],351); $card.Controls.Add($filterLabel)
   $script:filterBox=New-Object Windows.Forms.ComboBox; $script:filterBox.DropDownStyle='DropDownList'
   $script:filterBox.Items.AddRange([object[]]@('Sharp (bicubic)','Smooth (bilinear)'))
-  $script:filterBox.SelectedIndex=[Array]::IndexOf(@('sharp','smooth'),$script:filterValue); if($script:filterBox.SelectedIndex -lt 0){$script:filterBox.SelectedIndex=0}
+  $script:filterBox.SelectedIndex=[Array]::IndexOf((Get-LauncherSettingAllowed 'filter'),$script:filterValue); if($script:filterBox.SelectedIndex -lt 0){$script:filterBox.SelectedIndex=0}
   $script:filterBox.Location=New-Object Drawing.Point($columnX[0],375); $script:filterBox.Size=New-Object Drawing.Size($columnWidth,30)
   Set-DarkComboBox $script:filterBox; $card.Controls.Add($script:filterBox)
   $dzLabel=New-Label 'STICK DEADZONE' 8 $true $script:colors.muted; $dzLabel.Location=New-Object Drawing.Point($columnX[1],351); $card.Controls.Add($dzLabel)
   $script:deadzoneBox=New-Object Windows.Forms.ComboBox; $script:deadzoneBox.DropDownStyle='DropDownList'
   $script:deadzoneBox.Items.AddRange([object[]]@('Runtime default','Off (0%)','5%','10%','15%','20%','30%'))
-  $dzValues=@('','0','5','10','15','20','30'); $script:deadzoneBox.SelectedIndex=[Array]::IndexOf($dzValues,$script:deadzoneValue); if($script:deadzoneBox.SelectedIndex -lt 0){$script:deadzoneBox.SelectedIndex=0}
+  $dzValues=Get-LauncherSettingAllowed 'deadzone'; $script:deadzoneBox.SelectedIndex=[Array]::IndexOf($dzValues,$script:deadzoneValue); if($script:deadzoneBox.SelectedIndex -lt 0){$script:deadzoneBox.SelectedIndex=0}
   $script:deadzoneBox.Location=New-Object Drawing.Point($columnX[1],375); $script:deadzoneBox.Size=New-Object Drawing.Size($columnWidth,30)
   Set-DarkComboBox $script:deadzoneBox; $card.Controls.Add($script:deadzoneBox)
   $dzNote=New-Label 'Optional steering precision.' 8 $false $script:colors.muted; $dzNote.AutoSize=$false; $dzNote.Size=New-Object Drawing.Size($columnWidth,24); $dzNote.Location=New-Object Drawing.Point($columnX[1],409); $card.Controls.Add($dzNote)
@@ -1807,13 +1839,13 @@ function Build-SettingsPage {
   $save=New-Button 'SAVE SETTINGS' 155 $true; $save.Location=New-Object Drawing.Point(25,582)
   $save.Add_Click({
     $script:discValue=$script:settings_disc.Text; $script:dolphinValue=$script:settings_dolphin.Text; $script:controlsValue=$script:settings_controls.Text
-    $scaleOptions=[double[]]@(0.0,1.0,1.5,2.0,3.0,4.0,6.0); $script:scaleValue=$scaleOptions[$script:scaleBox.SelectedIndex]
-    $aspectOptions=@('original','widescreen','stretch'); $script:aspectValue=$aspectOptions[$script:aspectBox.SelectedIndex]
-    $aaOptions=@('off','fxaa'); $script:aaValue=$aaOptions[$script:aaBox.SelectedIndex]
-    $filterOptions=@('sharp','smooth'); $script:filterValue=$filterOptions[$script:filterBox.SelectedIndex]
+    $script:scaleValue=[double](Get-LauncherSettingAllowed 'scale')[$script:scaleBox.SelectedIndex]
+    $script:aspectValue=(Get-LauncherSettingAllowed 'aspect')[$script:aspectBox.SelectedIndex]
+    $script:aaValue=(Get-LauncherSettingAllowed 'aa')[$script:aaBox.SelectedIndex]
+    $script:filterValue=(Get-LauncherSettingAllowed 'filter')[$script:filterBox.SelectedIndex]
     $script:muteValue=$script:muteBox.Checked; $script:logValue=$script:logBox.Checked
     $script:fullscreenValue=$script:fullscreenBox.Checked; $script:vsyncValue=$script:vsyncBox.Checked; $script:volumeValue=[int]$script:volumeBox.Value
-    $dzOptions=@('','0','5','10','15','20','30'); $script:deadzoneValue=$dzOptions[$script:deadzoneBox.SelectedIndex]
+    $script:deadzoneValue=(Get-LauncherSettingAllowed 'deadzone')[$script:deadzoneBox.SelectedIndex]
     Save-Settings; Set-Status 'Settings saved.' $true
   }); $card.Controls.Add($save)
   $controllerRule=New-Object Windows.Forms.Panel; $controllerRule.Location=New-Object Drawing.Point(25,634); $controllerRule.Size=New-Object Drawing.Size($card.Width-50,1); $controllerRule.BackColor=$script:colors.line; $card.Controls.Add($controllerRule)
