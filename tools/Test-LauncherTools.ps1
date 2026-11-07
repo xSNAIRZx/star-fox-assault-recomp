@@ -24,7 +24,11 @@ function Get-RequiredEntries([string]$text,[string]$variable) {
   return @([regex]::Matches($block, "'([^']+)'") | ForEach-Object { $_.Groups[1].Value })
 }
 
+# The launcher's pages are dot-sourced into it, so the paths they open count as its own.
 $launcher = Read-ProjectText 'Launch-StarFoxAssault.ps1'
+foreach ($page in @(Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'tools\LauncherPages') -Filter '*.ps1' -File)) {
+  $launcher += "`n" + (Read-ProjectText ('tools\LauncherPages\' + $page.Name))
+}
 $package = Read-ProjectText 'tools/Package-Prototype.ps1'
 $update = Read-ProjectText 'tools/Install-PrototypeUpdate.ps1'
 
@@ -86,7 +90,7 @@ foreach ($list in $lists) {
 }
 
 # The launcher's own dependencies must be required by both lists, not merely present.
-$launcherNeeds = @('tools/Install-PrototypeUpdate.ps1','tools/Track-Session.ps1','tools/LauncherCore.ps1','tools/LauncherNative.ps1','tools/LauncherSaves.ps1',
+$launcherNeeds = @('tools/Install-PrototypeUpdate.ps1','tools/Track-Session.ps1','tools/LauncherCore.ps1','tools/LauncherNative.ps1','tools/LauncherSaves.ps1','tools/LauncherPages/Home.ps1','tools/LauncherPages/Crashes.ps1','tools/LauncherPages/Library.ps1','tools/LauncherPages/Saves.ps1','tools/LauncherPages/Mods.ps1','tools/LauncherPages/Settings.ps1','tools/LauncherPages/About.ps1',
   'tools/portable-toolchain.json','runtime/recomp/rel.py','runtime/recomp/dol.py')
 foreach ($needed in $launcherNeeds) {
   foreach ($list in $lists) {

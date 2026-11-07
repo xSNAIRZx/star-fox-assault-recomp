@@ -9,6 +9,9 @@
   `tools/LauncherNative.ps1` and `tools/LauncherSaves.ps1`, with tests for every rebuild
   reason, launch-image matching, game-process matching and backup naming and metadata (182
   launcher core tests). The window looks and behaves as before.
+- Each launcher page is now its own file under `tools/LauncherPages/`; the main script went
+  from about 2,180 to about 1,290 lines. The same 71 functions exist with unchanged text,
+  and all seven pages were opened in the window after the move.
 
 # 0.2.0-rc.4 - Windows x64 source-build release candidate
 

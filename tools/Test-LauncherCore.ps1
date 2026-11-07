@@ -208,7 +208,7 @@ Assert-True ($summary -notmatch 'D:\\Home\\Pat') 'bundle summary has no profile 
 # --- Launcher modules stay readable by Windows PowerShell 5.1 ---
 # A script without a BOM is read in the ANSI code page there, so any non-ASCII byte in one
 # shows up garbled in the window. Use a BOM or build the character from its code point.
-foreach ($module in @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'Launcher*.ps1' -File)) {
+foreach ($module in @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'Launcher*.ps1' -File) + @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'LauncherPages') -Filter '*.ps1' -File)) {
   $bytes = [IO.File]::ReadAllBytes($module.FullName)
   $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
   Assert-True ($hasBom -or -not @($bytes | Where-Object { $_ -gt 0x7F }).Count) "$($module.Name) is ASCII or has a BOM"
