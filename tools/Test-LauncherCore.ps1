@@ -205,6 +205,118 @@ $summary = New-CrashReportSummary @{ Version = '0.2.0-test'; OsVersion = 'Window
 Assert-True ($summary -match 'Flagged line: \[vertcheck\] %USERPROFILE%\\x') 'bundle summary names the flag, redacted'
 Assert-True ($summary -notmatch 'D:\\Home\\Pat') 'bundle summary has no profile path'
 
+# --- Launcher modules stay readable by Windows PowerShell 5.1 ---
+# A script without a BOM is read in the ANSI code page there, so any non-ASCII byte in one
+# shows up garbled in the window. Use a BOM or build the character from its code point.
+foreach ($module in @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'Launcher*.ps1' -File)) {
+  $bytes = [IO.File]::ReadAllBytes($module.FullName)
+  $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+  Assert-True ($hasBom -or -not @($bytes | Where-Object { $_ -gt 0x7F }).Count) "$($module.Name) is ASCII or has a BOM"
+}
+
+# --- Native build status (LauncherNative.ps1), with temporary files only ---
+. (Join-Path $PSScriptRoot 'LauncherNative.ps1')
+. (Join-Path $PSScriptRoot 'LauncherSaves.ps1')
+$scratch = Join-Path ([IO.Path]::GetTempPath()) ('launcher-core-test-' + [Guid]::NewGuid().ToString('N'))
+[IO.Directory]::CreateDirectory($scratch) | Out-Null
+try {
+  $exe = Join-Path $scratch 'assault.exe'
+  # Exact UTF-16 text, independent of how this file is decoded: READY, U+00B7, NATIVE PROTOTYPE.
+  $readyText = 'READY ' + [char]0x00B7 + ' NATIVE PROTOTYPE'
+  Assert-Equal 24 $readyText.Length 'ready text is 24 characters'
+  Assert-Equal $readyText $script:NativeReadyStatus 'ready status has a real middle dot'
+  $image = Join-Path $scratch 'game.iso'
+  $old = { [DateTime]::MinValue }
+  Assert-Equal 'NOT BUILT' (Get-NativeBuildStatus $exe $null $image $old).Status 'no executable: not built'
+  [IO.File]::WriteAllBytes($exe,[byte[]](1,2,3))
+  [IO.File]::WriteAllBytes($image,[byte[]](0..63))
+  $imageItem = Get-Item -LiteralPath $image
+  $exeHash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+  function New-Record([hashtable]$change = @{}) {
+    $record = [ordered]@{ schema_version = 2; game_id = 'GF7E01'; image = $image; image_size = $imageItem.Length
+      image_modified_utc_ticks = $imageItem.LastWriteTimeUtc.Ticks; image_sha256 = 'abc'; executable_sha256 = $exeHash }
+    foreach ($key in $change.Keys) { $record[$key] = $change[$key] }
+    return [pscustomobject]$record
+  }
+  function Status($record, [string]$img = $image, $source = $old) { Get-NativeBuildStatus $exe $record $img $source }
+  $r = Status $null
+  Assert-Equal 'REBUILD REQUIRED' $r.Status 'no record: rebuild'
+  Assert-Equal 'build record is missing or from an older launcher' $r.Reason 'no record: reason'
+  Assert-Equal 'build record is missing or from an older launcher' (Status (New-Record @{ schema_version = 1 })).Reason 'schema 1 record: rebuild'
+  Assert-Equal 'build record is missing or from an older launcher' (Status (New-Record @{ image_sha256 = '' })).Reason 'record without image hash: rebuild'
+  Assert-Equal 'selected game image was not found' (Status (New-Record) (Join-Path $scratch 'missing.iso')).Reason 'missing image: rebuild'
+  Assert-Equal 'selected game image was not found' (Status (New-Record) '').Reason 'no image selected: rebuild'
+  Assert-Equal 'selected game image differs from the one built' (Status (New-Record @{ image_size = 1 })).Reason 'size differs: rebuild'
+  Assert-Equal 'selected game image differs from the one built' (Status (New-Record @{ image_modified_utc_ticks = 5 })).Reason 'time differs: rebuild'
+  Assert-Equal 'selected game image differs from the one built' (Status (New-Record @{ image = (Join-Path $scratch 'other.iso') })).Reason 'path differs: rebuild'
+  Assert-Equal 'selected game image differs from the one built' (Status (New-Record @{ game_id = 'GF7P01' })).Reason 'other region: rebuild'
+  Assert-Equal 'selected game image could not be checked' (Status (New-Record @{ image = "bad`0path" })).Reason 'unreadable record path: rebuild'
+  Assert-Equal 'project source changed since the last build' (Status (New-Record) $image { [DateTime]::MaxValue }).Reason 'newer source: rebuild'
+  $ready = Status (New-Record)
+  Assert-Equal $readyText $ready.Status 'matching build: ready'
+  Assert-Equal '' $ready.Reason 'ready has no reason'
+  $scanned = $false
+  $null = Status (New-Record @{ image_size = 1 }) $image { $script:scanned = $true; [DateTime]::MinValue }
+  Assert-Equal $false $scanned 'source scan skipped when a cheaper check fails'
+  $upper = Join-Path $scratch 'GAME.ISO'
+  Assert-Equal $readyText (Status (New-Record @{ image = $upper })).Status 'image path compared without case'
+
+  Assert-Equal $true (Test-NativeBuildForImage $exe (New-Record) $image) 'launch allowed for matching build'
+  Assert-Equal $false (Test-NativeBuildForImage $exe (New-Record @{ executable_sha256 = ('0' * 64) }) $image) 'launch refused for a changed executable'
+  Assert-Equal $false (Test-NativeBuildForImage $exe (New-Record @{ executable_sha256 = '' }) $image) 'launch refused without an executable hash'
+  Assert-Equal $false (Test-NativeBuildForImage $exe (New-Record @{ image_size = 1 }) $image) 'launch refused for another image'
+  Assert-Equal $false (Test-NativeBuildForImage $exe $null $image) 'launch refused without a record'
+
+  $recordDir = Join-Path $scratch 'user-data'
+  [IO.Directory]::CreateDirectory($recordDir) | Out-Null
+  Assert-Equal $null (Read-NativeBuildRecord $scratch) 'missing build record reads as null'
+  [IO.File]::WriteAllText((Join-Path $recordDir 'native-build-info.json'),'{ not json')
+  Assert-Equal $null (Read-NativeBuildRecord $scratch) 'unreadable build record reads as null'
+  [IO.File]::WriteAllText((Join-Path $recordDir 'native-build-info.json'),'{"schema_version":2,"game_id":"GF7E01"}')
+  Assert-Equal 'GF7E01' (Read-NativeBuildRecord $scratch).game_id 'build record read'
+
+  $mine = [pscustomobject]@{ Path = $exe.ToUpperInvariant() }
+  $other = [pscustomobject]@{ Path = (Join-Path $scratch 'elsewhere\assault.exe') }
+  $hidden = [pscustomobject]@{ Path = $null }
+  Assert-Equal 1 @(Get-NativeGameProcess $exe @($mine,$other)).Count 'only this project''s game counts'
+  Assert-Equal 1 @(Get-NativeGameProcess $exe @($other,$hidden)).Count 'a game whose path cannot be read still counts'
+  Assert-Equal 0 @(Get-NativeGameProcess $exe @($other)).Count 'another assault.exe does not count'
+
+  # --- Save backups (LauncherSaves.ps1) ---
+  $backups = Join-Path $scratch 'backups'
+  [IO.Directory]::CreateDirectory($backups) | Out-Null
+  Assert-Equal (Join-Path $backups 'a.raw') (Resolve-SaveBackupPath $backups ([pscustomobject]@{ FileName = 'a.raw' })) 'backup path inside the folder'
+  foreach ($bad in @('..\a.raw','sub\a.raw','')) {
+    $threw = $false; try { $null = Resolve-SaveBackupPath $backups ([pscustomobject]@{ FileName = $bad }) } catch { $threw = $true }
+    Assert-True $threw "backup name '$bad' refused"
+  }
+  $threw = $false; try { $null = Resolve-SaveBackupPath $backups $null } catch { $threw = $true }
+  Assert-True $threw 'no selection refused'
+
+  $card = Join-Path $scratch 'card.raw'
+  [IO.File]::WriteAllBytes($card,(New-Object byte[] 100))
+  $threw = $false; try { $null = New-SaveBackupFile $card $backups 'x' @() 'manual backup' $true } catch { $threw = ($_.Exception.Message -match '100 bytes') }
+  Assert-True $threw 'wrong-size card refused when the runtime size is required'
+  Assert-Equal 0 @(Get-ChildItem -LiteralPath $backups).Count 'refused backup wrote nothing'
+  $copy = New-SaveBackupFile $card $backups 'Before boss' @('manual') 'manual backup' $false
+  Assert-True ((Split-Path -Leaf $copy) -match '^memcard-\d{8}-\d{6}-\d{3}-[0-9a-f]{32}\.raw$') 'backup file name'
+  $meta = Read-SaveBackupMetadata $copy
+  Assert-Equal 'Before boss' $meta.label 'backup label kept'
+  Assert-Equal 'manual' (@($meta.tags) -join ',') 'backup tags kept'
+  Assert-Equal (Get-FileHash -LiteralPath $card -Algorithm SHA256).Hash $meta.sha256 'backup metadata records the hash'
+  Assert-Equal 100 $meta.sizeBytes 'backup metadata records the size'
+  $tags = @(1..20 | ForEach-Object { "tag$_" }) + @(('x' * 40))
+  [IO.File]::WriteAllText(($copy + '.meta.json'),(@{ schemaVersion = 1; fileName = (Split-Path -Leaf $copy); label = "a`tb`nc" + ('y' * 200); tags = $tags } | ConvertTo-Json))
+  $meta = Read-SaveBackupMetadata $copy
+  Assert-Equal 100 $meta.label.Length 'label capped at 100'
+  Assert-True ($meta.label -notmatch '[\t\n]') 'label has no control characters'
+  Assert-Equal 12 @($meta.tags).Count 'at most 12 tags'
+  [IO.File]::WriteAllText(($copy + '.meta.json'),(@{ schemaVersion = 1; fileName = 'other.raw'; label = 'Wrong file' } | ConvertTo-Json))
+  Assert-True ((Read-SaveBackupMetadata $copy).label -ne 'Wrong file') 'a sidecar for another file is ignored'
+} finally {
+  Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Write-Output ("launcher core tests: {0} passed, {1} failed" -f $script:passed,$script:failures)
 if ($script:failures) { exit 1 }
 Write-Output 'PASS launcher core'

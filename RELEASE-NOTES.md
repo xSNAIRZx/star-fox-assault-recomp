@@ -5,6 +5,10 @@
   In a source checkout, run `tools/Build-Launcher.ps1` or open `Start-StarFoxAssault.cmd`.
 - The update installer accepts a package whose `VALIDATION.md` is under `docs/`, so a later
   release can move it without stopping updates from this one.
+- The launcher stays in PowerShell. Its native-build status and save-backup logic moved into
+  `tools/LauncherNative.ps1` and `tools/LauncherSaves.ps1`, with tests for every rebuild
+  reason, launch-image matching, game-process matching and backup naming and metadata (182
+  launcher core tests). The window looks and behaves as before.
 
 # 0.2.0-rc.4 - Windows x64 source-build release candidate
 

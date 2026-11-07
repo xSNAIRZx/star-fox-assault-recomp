@@ -52,14 +52,17 @@ if ($script:portableMode -and -not (Test-Path -LiteralPath $script:settingsPath 
   try { Copy-Item -LiteralPath $script:legacySettingsPath -Destination $script:settingsPath -ErrorAction Stop } catch {}
 }
 
-# Settings schema, build progress, pre-flight and failure-report logic. Kept free of WinForms
-# so tools/Test-LauncherCore.ps1 can test it without opening this window.
-$launcherCorePath = Join-Path $script:projectDir 'tools\LauncherCore.ps1'
-if (-not (Test-Path -LiteralPath $launcherCorePath -PathType Leaf)) {
-  [Windows.Forms.MessageBox]::Show(('A launcher file is missing: {0}{1}{1}Reinstall the complete launcher package.' -f $launcherCorePath,[Environment]::NewLine),'Peregrine Forge','OK','Error') | Out-Null
-  exit 1
+# Logic kept free of WinForms so tools/Test-LauncherCore.ps1 can test it without opening this
+# window: settings schema, build progress, pre-flight and failure reports (LauncherCore),
+# native build status (LauncherNative) and save backups (LauncherSaves).
+foreach ($launcherModule in @('LauncherCore.ps1','LauncherNative.ps1','LauncherSaves.ps1')) {
+  $launcherModulePath = Join-Path $script:projectDir ('tools\' + $launcherModule)
+  if (-not (Test-Path -LiteralPath $launcherModulePath -PathType Leaf)) {
+    [Windows.Forms.MessageBox]::Show(('A launcher file is missing: {0}{1}{1}Reinstall the complete launcher package.' -f $launcherModulePath,[Environment]::NewLine),'Peregrine Forge','OK','Error') | Out-Null
+    exit 1
+  }
+  . $launcherModulePath
 }
-. $launcherCorePath
 
 $script:settings = Get-LauncherSettingDefaults
 if (Test-Path -LiteralPath $script:settingsPath) {
@@ -339,75 +342,19 @@ function Add-SectionHeader($parent, [string]$title, [string]$subtitle = '') {
   }
 }
 function Get-LatestSourceWriteUtc {
-  # Scanning runtime/recomp/decomp recursively is slow on large trees, so the result is cached
-  # for the launcher session and cleared after a build or a local package update.
-  if ($null -ne $script:sourceFreshness) { return $script:sourceFreshness }
-  $sources = @('CMakeLists.txt','runtime','recomp','decomp\config\GF7E01') | ForEach-Object { Join-Path $script:projectDir $_ }
-  $latest = Get-ChildItem -LiteralPath $sources -Recurse -File -ErrorAction SilentlyContinue |
-    Where-Object {
-      $_.FullName -notmatch '\\(build[^\\]*|docs|\.git|__pycache__)\\' -and
-      ($_.Name -eq 'CMakeLists.txt' -or $_.Extension -in @('.c','.cpp','.h','.hpp','.py','.cmake','.txt','.yml','.yaml','.manifest','.rc'))
-    } |
-    Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
-  $script:sourceFreshness = if ($latest) { $latest.LastWriteTimeUtc } else { [DateTime]::MinValue }
+  # Cached for the launcher session; cleared after a build or a local package update.
+  if ($null -eq $script:sourceFreshness) { $script:sourceFreshness = Get-NativeSourceWriteUtc $script:projectDir }
   return $script:sourceFreshness
 }
 function Reset-NativeStatusCache { $script:sourceFreshness = $null }
 function Get-NativeStatus {
   # Returns NOT BUILT, REBUILD REQUIRED or READY. $script:nativeStatusReason explains a rebuild.
-  $script:nativeStatusReason = ''
-  if (-not (Test-Path -LiteralPath $script:nativePath -PathType Leaf)) { return 'NOT BUILT' }
-  $buildInfoPath = Join-Path $script:projectDir 'user-data\native-build-info.json'
-  $buildInfo = $null
-  try { if (Test-Path -LiteralPath $buildInfoPath -PathType Leaf) { $buildInfo = Get-Content -LiteralPath $buildInfoPath -Raw | ConvertFrom-Json } } catch { }
-  if (-not $buildInfo -or [int]$buildInfo.schema_version -lt 2 -or [string]::IsNullOrWhiteSpace([string]$buildInfo.image_sha256)) {
-    $script:nativeStatusReason = 'build record is missing or from an older launcher'; return 'REBUILD REQUIRED'
-  }
-  if (-not (Test-FilePath ([string]$script:discValue))) { $script:nativeStatusReason = 'selected game image was not found'; return 'REBUILD REQUIRED' }
-  try {
-    $imagePath = [IO.Path]::GetFullPath([string]$script:discValue)
-    $builtImagePath = [IO.Path]::GetFullPath([string]$buildInfo.image)
-    $imageFile = Get-Item -LiteralPath $imagePath -ErrorAction Stop
-    if (-not [string]::Equals($imagePath,$builtImagePath,[StringComparison]::OrdinalIgnoreCase) -or
-        [long]$buildInfo.image_size -ne [long]$imageFile.Length -or
-        [long]$buildInfo.image_modified_utc_ticks -ne [long]$imageFile.LastWriteTimeUtc.Ticks -or
-        [string]$buildInfo.game_id -cne 'GF7E01') { $script:nativeStatusReason = 'selected game image differs from the one built'; return 'REBUILD REQUIRED' }
-  } catch { $script:nativeStatusReason = 'selected game image could not be checked'; return 'REBUILD REQUIRED' }
-  $exeTime = (Get-Item -LiteralPath $script:nativePath).LastWriteTimeUtc
-  if ((Get-LatestSourceWriteUtc) -gt $exeTime) { $script:nativeStatusReason = 'project source changed since the last build'; return 'REBUILD REQUIRED' }
-  return 'READY · NATIVE PROTOTYPE'
+  $result = Get-NativeBuildStatus $script:nativePath (Read-NativeBuildRecord $script:projectDir) ([string]$script:discValue) { Get-LatestSourceWriteUtc }
+  $script:nativeStatusReason = $result.Reason
+  return $result.Status
 }
-function Get-RunningNativeGame {
-  # Only this project's assault.exe counts; an unrelated program with the same name must not
-  # block launches. A process whose path cannot be read (for example one running elevated) is
-  # still treated as running, so saves and asset packs are never changed under a live game.
-  $target = [IO.Path]::GetFullPath($script:nativePath)
-  return @(Get-Process -Name assault -ErrorAction SilentlyContinue | Where-Object {
-    $path = $null
-    try { $path = $_.Path } catch {}
-    [string]::IsNullOrEmpty($path) -or [string]::Equals([IO.Path]::GetFullPath($path),$target,[StringComparison]::OrdinalIgnoreCase)
-  })
-}
-function Test-NativeBuildImage([string]$imagePath) {
-  $buildInfoPath = Join-Path $script:projectDir 'user-data\native-build-info.json'
-  if (-not (Test-Path -LiteralPath $buildInfoPath -PathType Leaf)) { return $false }
-  try {
-    $buildInfo = Get-Content -LiteralPath $buildInfoPath -Raw | ConvertFrom-Json
-    if ([int]$buildInfo.schema_version -lt 2 -or [string]$buildInfo.game_id -cne 'GF7E01' -or
-        [string]::IsNullOrWhiteSpace([string]$buildInfo.image_sha256) -or [string]::IsNullOrWhiteSpace([string]$buildInfo.executable_sha256)) { return $false }
-    $image = Get-Item -LiteralPath $imagePath -ErrorAction Stop
-    $fullImagePath = [IO.Path]::GetFullPath($imagePath)
-    $builtImagePath = [IO.Path]::GetFullPath([string]$buildInfo.image)
-    if (-not [string]::Equals($fullImagePath,$builtImagePath,[StringComparison]::OrdinalIgnoreCase) -or
-        [long]$image.Length -ne [long]$buildInfo.image_size -or
-        [long]$image.LastWriteTimeUtc.Ticks -ne [long]$buildInfo.image_modified_utc_ticks) { return $false }
-    # A size/time/path mismatch forces a rebuild; matching these recorded attributes
-    # avoids re-hashing a multi-gigabyte image on every launch. The build hash remains
-    # part of the record and is verified by the build pipeline when the image is read.
-    $exeHash = (Get-FileHash -LiteralPath $script:nativePath -Algorithm SHA256).Hash
-    return [string]::Equals($exeHash,[string]$buildInfo.executable_sha256,[StringComparison]::OrdinalIgnoreCase)
-  } catch { return $false }
-}
+function Get-RunningNativeGame { return (Get-NativeGameProcess $script:nativePath) }
+function Test-NativeBuildImage([string]$imagePath) { return (Test-NativeBuildForImage $script:nativePath (Read-NativeBuildRecord $script:projectDir) $imagePath) }
 function Test-GameImage {
   param([string]$path)
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'Select an existing ISO or CISO image first.' }
@@ -1491,84 +1438,13 @@ function Build-LibraryPage {
   $script:content.Controls.Add($build)
 }
 
-function Get-BackupFilePath($item) {
-  if ($null -eq $item -or [string]::IsNullOrWhiteSpace([string]$item.FileName)) { throw 'Select a save backup first.' }
-  $fileName = [string]$item.FileName
-  if ([IO.Path]::GetFileName($fileName) -cne $fileName) { throw 'The selected backup name is invalid.' }
-  $root = [IO.Path]::GetFullPath($script:backupDir).TrimEnd('\') + '\'
-  $path = [IO.Path]::GetFullPath((Join-Path $root $fileName))
-  if (-not $path.StartsWith($root,[StringComparison]::OrdinalIgnoreCase)) { throw 'The selected backup is outside the backup folder.' }
-  return $path
-}
-
-function Get-BackupMetadata([string]$rawPath) {
-  $file = Get-Item -LiteralPath $rawPath -ErrorAction Stop
-  $defaultLabel = [IO.Path]::GetFileNameWithoutExtension($file.Name) -replace '^memcard-',''
-  $result = [ordered]@{
-    schemaVersion = 1
-    fileName = $file.Name
-    label = $defaultLabel
-    tags = @()
-    createdUtc = $file.LastWriteTimeUtc.ToString('o')
-    sizeBytes = [long]$file.Length
-    sha256 = ''
-    source = 'existing backup'
-  }
-  $metaPath = $rawPath + '.meta.json'
-  if (Test-Path -LiteralPath $metaPath -PathType Leaf) {
-    try {
-      $saved = Get-Content -LiteralPath $metaPath -Raw | ConvertFrom-Json
-      if ([int]$saved.schemaVersion -eq 1 -and [string]$saved.fileName -ceq $file.Name) {
-        if (-not [string]::IsNullOrWhiteSpace([string]$saved.label)) {
-          $safeLabel = [regex]::Replace([string]$saved.label,'[\r\n\t]',' ')
-          if ($safeLabel.Length -gt 100) { $safeLabel = $safeLabel.Substring(0,100) }
-          $result.label = $safeLabel
-        }
-        $result.tags = @($saved.tags | ForEach-Object {
-          $tag = [regex]::Replace([string]$_,'[\r\n\t]',' ').Trim()
-          if ($tag.Length -gt 32) { $tag = $tag.Substring(0,32) }
-          if ($tag) { $tag }
-        } | Select-Object -First 12)
-        if ($saved.createdUtc) { $result.createdUtc = [string]$saved.createdUtc }
-        if ($saved.sha256) { $result.sha256 = [string]$saved.sha256 }
-        if ($saved.source) { $result.source = [string]$saved.source }
-      }
-    } catch { }
-  }
-  return [pscustomobject]$result
-}
-
+function Get-BackupFilePath($item) { return (Resolve-SaveBackupPath $script:backupDir $item) }
+function Get-BackupMetadata([string]$rawPath) { return (Read-SaveBackupMetadata $rawPath) }
 function Write-BackupMetadata([string]$rawPath,[string]$label,[string[]]$tags,[string]$source,[string]$createdUtc) {
-  $file = Get-Item -LiteralPath $rawPath -ErrorAction Stop
-  $hash = (Get-FileHash -LiteralPath $rawPath -Algorithm SHA256).Hash
-  $meta = [ordered]@{
-    schemaVersion = 1
-    fileName = $file.Name
-    label = $label
-    tags = @($tags)
-    createdUtc = $createdUtc
-    sizeBytes = [long]$file.Length
-    sha256 = $hash
-    source = $source
-  }
-  $json = $meta | ConvertTo-Json -Depth 4
-  [IO.File]::WriteAllText(($rawPath + '.meta.json'),$json,(New-Object System.Text.UTF8Encoding($false)))
+  Write-SaveBackupMetadata -RawPath $rawPath -Label $label -Tags $tags -Source $source -CreatedUtc $createdUtc
 }
-
 function New-SaveBackup([string]$sourcePath,[string]$label,[string[]]$tags,[string]$source,[bool]$requireRuntimeSize = $false) {
-  if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) { throw 'The active memory card was not found.' }
-  $file = Get-Item -LiteralPath $sourcePath -ErrorAction Stop
-  $expectedSize = 4 * 1024 * 1024 / 8
-  if ($requireRuntimeSize -and $file.Length -ne $expectedSize) { throw "This memory card is $($file.Length) bytes. The native runtime uses a $expectedSize-byte (4 Mbit) card, so it was not backed up." }
-  [IO.Directory]::CreateDirectory($script:backupDir) | Out-Null
-  $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
-  $name = 'memcard-{0}-{1}.raw' -f $stamp,[Guid]::NewGuid().ToString('N')
-  $dest = Join-Path $script:backupDir $name
-  [IO.File]::Copy($sourcePath,$dest,$false)
-  $created = [DateTime]::UtcNow.ToString('o')
-  try { Write-BackupMetadata -rawPath $dest -label $label -tags $tags -source $source -createdUtc $created }
-  catch { throw "Backup data was copied to $name, but its metadata could not be written: $($_.Exception.Message)" }
-  return $dest
+  return (New-SaveBackupFile -SourcePath $sourcePath -BackupDir $script:backupDir -Label $label -Tags $tags -Source $source -RequireRuntimeSize $requireRuntimeSize)
 }
 
 function Update-BackupDetails {
