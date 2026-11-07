@@ -11,7 +11,8 @@ Tick items here as they land, in the same PR as the change.
 - **Also done, 2026-11-05:** build pre-flight, readable build failures, phase timing and download sizes (Tier 2), and the single settings schema in `tools/LauncherCore.ps1` with its tests (Tier 3). The launcher window starts with these changes; the pre-flight dialog, failure view and download text still need a desktop check with a real build.
 - **Also done, 2026-11-05 (polish):** fixed the Systems & Controls crash on open, DPI awareness with scaled layout, "&" in labels, minimum-size fit, empty states, readable disabled buttons, header bands, matching page names, Settings save/unsaved handling and refreshed About text. See RELEASE-NOTES.md.
 - **Done, 2026-11-05:** rc.4 published as an experimental prerelease with its package digest. The desktop and clean-machine UI walkthroughs below are still open.
-- **Next:** decide C# vs PowerShell (step 3 of the order below); then stop committing the launcher exe and tidy the root, now that rc.4 ships the tolerant updater.
+- **Also done, 2026-11-07:** the launcher exe is no longer tracked in Git (the packager builds it from source), and the update installer accepts `VALIDATION.md` at the root or under `docs/`, the first step of the root tidy.
+- **Next:** decide C# vs PowerShell (step 3 of the order below).
 - **Open decision:** keep the launcher UI in PowerShell or port it to C#. Decide before the Tier 3 module split.
 
 ## What the launcher is today
@@ -61,11 +62,11 @@ Main weak spots: every control is placed with absolute coordinates (now in 96-DP
 - [x] Publish rc.4: package current source, run the full checks against that exact ZIP, publish with its digest. Per [RELEASE-READINESS.md](../RELEASE-READINESS.md), rc.2/rc.3 evidence cannot certify it. Published 2026-11-05 as an experimental prerelease; package and update checks ran against the exact ZIP, the launcher UI walkthrough did not.
 - [ ] Run the launcher UI end to end on a clean Windows machine or Windows Sandbox: Import & Build, Play Native, cancel, update, rollback, save restore (readiness gate 3).
 - [x] Keep CI-built launcher, inspector and package with SHA-256 as a workflow artifact.
-- [ ] Stop committing `Star Fox Assault Recomp.exe`: attach the CI-built exe to releases instead. The package and updater required-file lists name it at the repo root, so change them together.
+- [x] Stop committing `Star Fox Assault Recomp.exe`: attach the CI-built exe to releases instead. The package and updater required-file lists name it at the repo root, so change them together. Done 2026-11-07: it is ignored by Git, `tools/Package-Prototype.ps1` builds it from `tools/LauncherBootstrap.cs` before staging, so packages still ship it at the root (both required-file lists unchanged), and CI keeps the built exe as a workflow artifact. The tool audit checks the bootstrap source instead of the exe.
 - [ ] Authenticate updates: sign `release.json` (minisign or a code-signing certificate) and verify before installing a local ZIP.
 - [x] Fix the old-updater dead end (older updaters reject new doc paths): skip unknown docs instead of failing, or show a one-time migration note. This installer now skips unknown documentation (still hash-checked) and accepts `docs/`; installers already shipped keep the old rule, so layout changes wait until rc.4 ships it.
 - [x] Add a GitHub bug-report form with the roadmap's fields.
-- [ ] Tidy the repo root: move `README-PROTOTYPE.txt`, `RELEASE-READINESS.md` and `VALIDATION.md` under `docs/`, updating the package and updater allowlists.
+- [ ] Tidy the repo root: move `README-PROTOTYPE.txt`, `RELEASE-READINESS.md` and `VALIDATION.md` under `docs/`, updating the package and updater allowlists. Staged because the installers already shipped decide what an update may contain: rc.2-rc.4 require `VALIDATION.md` and `README-PROTOTYPE.txt` at the root, and rc.2/rc.3 reject any `docs/` path. Step 1 (2026-11-07): this installer accepts `VALIDATION.md` at either place. Step 2, after a release ships that installer: move `VALIDATION.md` and `RELEASE-READINESS.md`, and update the package document list and links. Keep `README-PROTOTYPE.txt` at the root (it is the first file a player opens after extracting). An update does not delete the old root copies.
 - [ ] Record a pinned upstream source for the replacement font bytes in `THIRD_PARTY_NOTICES.md`.
 
 ## Suggested order

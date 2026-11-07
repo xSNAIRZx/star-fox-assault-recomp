@@ -66,6 +66,9 @@ $lists = @(
   @{ Text = $update; Variable = '$requiredFiles'; Label = 'the update installer' }
 )
 $requiredByList = @{}
+# Shipped files that are build outputs, not tracked in Git: the source they are built from
+# must be in the repository instead.
+$builtFrom = @{ 'Star Fox Assault Recomp.exe' = 'tools/LauncherBootstrap.cs' }
 foreach ($list in $lists) {
   $entries = Get-RequiredEntries $list.Text $list.Variable
   if (-not $entries.Count) { throw "No required-file entries were found in $($list.Label)." }
@@ -73,6 +76,7 @@ foreach ($list in $lists) {
   foreach ($entry in $entries) {
     $relative = $entry.Replace('\','/')
     if ($relative -eq 'tools/Package-Prototype.ps1') { continue }  # need not ship itself
+    if ($builtFrom.ContainsKey($relative)) { $relative = $builtFrom[$relative] }
     $checked++
     if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot $relative))) {
       Write-Output "MISSING: $($list.Label) requires $relative, which is not in the repository"

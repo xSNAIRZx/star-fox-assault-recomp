@@ -33,7 +33,7 @@ if (Test-Path -LiteralPath $native -PathType Leaf) {
 $bootstrap = Join-Path $project 'Star Fox Assault Recomp.exe'
 if (Test-Path -LiteralPath $bootstrap -PathType Leaf) {
   Add-Check 'Windows launcher executable exists' $true ("SHA256={0}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $bootstrap).Hash)
-} else { Add-Check 'Windows launcher executable exists' $false $bootstrap }
+} else { Add-Check 'Windows launcher executable exists' $false "$bootstrap (not tracked in Git; run tools/Build-Launcher.ps1)" }
 
 $config=Get-Content -LiteralPath (Join-Path $project 'CMakeLists.txt') -Raw
 $moduleList=[regex]::Match($config,'(?s)set\(ASSAULT_REL_MODULES\s+([^)]*)\)')

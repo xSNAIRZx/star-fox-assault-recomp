@@ -146,6 +146,57 @@ Assert-True (-not (Test-Path -LiteralPath (Join-Path $docRoot 'guides/new-guide.
 Assert-True ([string]$docResult.Message -match '1 documentation file') 'The result does not say a documentation file was left out.'
 $results.tests.unknownDocSkipped = @{ passed=$true }
 
+# VALIDATION.md may move under docs/ in a later package: that copy satisfies the requirement and
+# is installed there, and a package with neither copy is still refused.
+function New-ValidationVariant([string]$name, [string]$newPath) {
+  $variantZip = Join-Path $testRoot $name
+  Copy-Item -LiteralPath $PackagePath -Destination $variantZip
+  $variant = [IO.Compression.ZipFile]::Open($variantZip,[IO.Compression.ZipArchiveMode]::Update)
+  try {
+    $old = $variant.GetEntry('VALIDATION.md')
+    # Entry.Length is not reliable in Update mode; copy the whole stream instead.
+    $buffer = New-Object IO.MemoryStream
+    $source = $old.Open(); try { $source.CopyTo($buffer) } finally { $source.Dispose() }
+    $bytes = $buffer.ToArray()
+    if (-not $bytes.Length) { throw 'VALIDATION.md read back empty from the package copy.' }
+    $old.Delete()
+    if ($newPath) {
+      $entry = $variant.CreateEntry($newPath)
+      $stream = $entry.Open(); try { $stream.Write($bytes,0,$bytes.Length) } finally { $stream.Dispose() }
+    }
+    $manifest = $variant.GetEntry('SHA256SUMS.txt')
+    $reader = New-Object IO.StreamReader($manifest.Open()); try { $manifestText = $reader.ReadToEnd() } finally { $reader.Dispose() }
+    $manifest.Delete()
+    $replacement = if ($newPath) { '  ' + $newPath } else { '' }
+    $lines = @($manifestText -split "`r?`n" | Where-Object { $_ } | ForEach-Object {
+      if ($_ -cmatch '^([0-9a-f]{64})  VALIDATION\.md$') { if ($newPath) { $Matches[1] + $replacement } } else { $_ }
+    })
+    $manifest = $variant.CreateEntry('SHA256SUMS.txt')
+    $writer = New-Object IO.StreamWriter($manifest.Open(),(New-Object Text.UTF8Encoding($false)))
+    try { $writer.Write(($lines -join "`n") + "`n") } finally { $writer.Dispose() }
+  } finally { $variant.Dispose() }
+  return $variantZip
+}
+$movedZip = New-ValidationVariant 'moved-validation.zip' 'docs/VALIDATION.md'
+$movedRoot = Join-Path $testRoot 'moved-validation-install'
+[IO.Directory]::CreateDirectory($movedRoot) | Out-Null
+$null = Set-TestFile $movedRoot 'CMakeLists.txt' ([Text.Encoding]::UTF8.GetBytes('moved validation sentinel'))
+$movedResult = & $installer -ArchivePath $movedZip -TargetRoot $movedRoot
+Assert-True ($movedResult.Status -eq 'installed') 'A package with docs/VALIDATION.md was refused.'
+Assert-True (Test-Path -LiteralPath (Join-Path $movedRoot 'docs/VALIDATION.md') -PathType Leaf) 'docs/VALIDATION.md was not installed.'
+$missingZip = New-ValidationVariant 'missing-validation.zip' ''
+$missingRoot = Join-Path $testRoot 'missing-validation-install'
+[IO.Directory]::CreateDirectory($missingRoot) | Out-Null
+$missingCmake = Set-TestFile $missingRoot 'CMakeLists.txt' ([Text.Encoding]::UTF8.GetBytes('missing validation sentinel'))
+$missingRefused = $false
+try {
+  $missingResult = & $installer -ArchivePath $missingZip -TargetRoot $missingRoot
+  if ($missingResult.Status -ne 'installed') { $missingRefused = $true }
+} catch { $missingRefused = $true }
+Assert-True $missingRefused 'A package without VALIDATION.md was accepted.'
+Assert-True (([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($missingCmake))) -ceq 'missing validation sentinel') 'A refused package changed the scratch install.'
+$results.tests.validationDocLocation = @{ passed=$true }
+
 $results.completedUtc = [DateTime]::UtcNow.ToString('o')
 $resultPath = Join-Path $testRoot 'results.json'
 $results | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8

@@ -104,6 +104,9 @@ function New-PortableZipArchive([string]$sourceRoot,[string]$archivePath) {
 }
 
 try {
+  # The launcher exe is not tracked in Git: build it from tools/LauncherBootstrap.cs so the
+  # package always carries the bytes of this source revision, never a stale local copy.
+  & (Join-Path $PSScriptRoot 'Build-Launcher.ps1') | Write-Host
   [IO.Directory]::CreateDirectory($stage) | Out-Null
   $hostToolHashBefore = (Get-FileHash -LiteralPath $hostToolPath -Algorithm SHA256).Hash
   $nativeHashBefore = if ($IncludeNativePrototype) { (Get-FileHash -LiteralPath $nativePath -Algorithm SHA256).Hash } else { $null }

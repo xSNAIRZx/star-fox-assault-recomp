@@ -5,3 +5,7 @@
 # Python runtime caches created by analysis and packaging tools.
 __pycache__/
 *.py[cod]
+
+# The launcher exe is built from tools/LauncherBootstrap.cs (tools/Build-Launcher.ps1);
+# packages and CI artifacts carry it, the source repo does not.
+/Star Fox Assault Recomp.exe

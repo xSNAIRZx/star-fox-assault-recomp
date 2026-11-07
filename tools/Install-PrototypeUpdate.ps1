@@ -27,7 +27,7 @@ $allowedSourceExtensions = @('.c','.cc','.cpp','.cs','.h','.hh','.hpp','.inl','.
 $forbiddenExtensions = @('.iso','.ciso','.gcm','.dol','.rel','.raw','.elf','.dll','.lib','.obj','.o','.pdb')
 $requiredFiles = @(
   'Launch-StarFoxAssault.ps1','Start-StarFoxAssault.cmd','Star Fox Assault Recomp.exe',
-  'tools/native/assault-image-tool.exe','tools/portable-toolchain.json','release.json','LICENSE','CREDITS.md','RELEASE-NOTES.md','VALIDATION.md','portable.txt',
+  'tools/native/assault-image-tool.exe','tools/portable-toolchain.json','release.json','LICENSE','CREDITS.md','RELEASE-NOTES.md','portable.txt',
   'CMakeLists.txt','THIRD_PARTY_NOTICES.md',
   'README-PROTOTYPE.txt',$manifestName,'assets/assault-launcher-background.png',
   'assets/assault-arwing-hangar.png','assets/assault-arwing-hangar.prompt.txt','assets/assault-launcher.ico',
@@ -40,8 +40,11 @@ $requiredFiles = @(
   'runtime/runtime/disc_mods.cpp','runtime/recomp/rel.py','runtime/recomp/dol.py','runtime/recomp/recomp.py','runtime/recomp/ppc.py','tools/Install-PrototypeUpdate.ps1','tools/Track-Session.ps1','tools/LauncherCore.ps1',
   'tools/Build-StarFoxAssault.ps1','tools/Build-NativeGame.ps1','tools/Build-CacheSignature.ps1','tools/Ensure-PortableToolchain.ps1','tools/Build-Launcher.ps1','tools/LauncherBootstrap.cs'
 )
+$requiredDocuments = @(
+  ,@('VALIDATION.md','docs/VALIDATION.md')
+)
 $archive = $null
-$manifestTable = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::Ordinal)
+$manifestTable =New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::Ordinal)
 $archiveFiles = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
 $skippedDocs = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
 $applied = New-Object 'System.Collections.Generic.List[object]'
@@ -209,6 +212,10 @@ try {
     if ($actualHash -cne $manifestTable[$name]) { throw "Package hash mismatch: $name" }
   }
   foreach ($required in $requiredFiles) { if (-not $archiveFiles.ContainsKey($required)) { throw "Required prototype package file is missing: $required" } }
+  # Documents a later package may move under docs/: either place satisfies the requirement.
+  foreach ($choices in $requiredDocuments) {
+    if (-not @($choices | Where-Object { $archiveFiles.ContainsKey($_) }).Count) { throw "Required prototype package file is missing: $($choices -join ' or ')" }
+  }
 
   [IO.Directory]::CreateDirectory($payloadRoot) | Out-Null
   foreach ($name in $archiveFiles.Keys) {

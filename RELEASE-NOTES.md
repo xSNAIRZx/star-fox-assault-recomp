@@ -1,3 +1,11 @@
+# Unreleased — 2026-11-07 repository housekeeping
+
+- The launcher exe (`Star Fox Assault Recomp.exe`) is no longer stored in Git. Packages and
+  CI artifacts still include it: the packager builds it from `tools/LauncherBootstrap.cs`.
+  In a source checkout, run `tools/Build-Launcher.ps1` or open `Start-StarFoxAssault.cmd`.
+- The update installer accepts a package whose `VALIDATION.md` is under `docs/`, so a later
+  release can move it without stopping updates from this one.
+
 # 0.2.0-rc.4 - Windows x64 source-build release candidate
 
 Experimental prerelease, not a stable full-game release. rc.4 packages everything listed

@@ -81,7 +81,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/Build-StarFoxAssau
 
 The same portable build worker powers **Import & Build**. `-Offline` reuses already downloaded tools and sources; it cannot perform the initial setup without cached downloads. Build output is placed in `build-desktop/Release/assault.exe`. Build tools and generated game code remain private local files under `user-data/`.
 
-To rebuild only the small launcher executable, run `tools/Build-Launcher.ps1`; it uses the Windows .NET Framework compiler. Developers can also use the root CMake project with `GAME_ISO` set explicitly. Recompilation metadata is in `decomp/config/GF7E01/` and `recomp/`; builds do not depend on the ignored `analysis/` folder.
+A source checkout does not include the launcher executable: run `tools/Build-Launcher.ps1` to build `Star Fox Assault Recomp.exe` with the Windows .NET Framework compiler, or open `Start-StarFoxAssault.cmd`, which runs the launcher script directly when the exe is absent. Release packages and CI artifacts include the built exe. Developers can also use the root CMake project with `GAME_ISO` set explicitly. Recompilation metadata is in `decomp/config/GF7E01/` and `recomp/`; builds do not depend on the ignored `analysis/` folder.
 
 ## Credits and validation
 
