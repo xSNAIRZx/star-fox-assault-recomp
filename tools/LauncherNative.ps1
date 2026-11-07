@@ -79,6 +79,41 @@ function Test-NativeBuildForImage([string]$NativePath, $Record, [string]$ImagePa
   } catch { return $false }
 }
 
+# The native game's command line for one session, from a saved settings profile (see
+# Get-LauncherSettingDefaults). Uses the argument helpers in LauncherCore.ps1. The game image
+# comes last.
+function Get-NativeSessionArgumentList($Settings, [string]$HdTextureDir, [string]$TextureDumpDir) {
+  $list = New-Object System.Collections.Generic.List[string]
+  foreach ($argument in @(Get-NativeGraphicsArgumentList $Settings.scale $Settings.aspect $Settings.aa $Settings.filter)) { $list.Add($argument) }
+  $list.Add(('--vsync={0}' -f [int][bool]$Settings.vsync))
+  $list.Add(('--volume={0}' -f [int]$Settings.volume))
+  if ([string]$Settings.deadzone) { $list.Add(('--deadzone={0}' -f [string]$Settings.deadzone)) }
+  if ([bool]$Settings.fullscreen) { $list.Add('--fullscreen') }
+  if (-not [bool]$Settings.inputLog) { $list.Add('--no-input-log') }
+  if ([bool]$Settings.muteMusic) { $list.Add('--no-music') }
+  if ([string]$Settings.controls) { $list.Add('--controls=' + (ConvertTo-NativeArgument ([string]$Settings.controls))) }
+  foreach ($argument in @(Get-NativeEnhancementArgumentList $Settings $HdTextureDir $TextureDumpDir)) { $list.Add($argument) }
+  $list.Add((ConvertTo-NativeArgument ([string]$Settings.disc)))
+  return $list.ToArray()
+}
+
+# The GCN_* variables for one session. A $null value clears a variable the user's own
+# environment may set (scripted input, another mods folder). GCN_WATCH_ADDR only reports in a
+# diagnostic build; the guard reports in any build, so a session that hits the
+# current-thread crash carries the frame and the value either side of the change in its log.
+function Get-NativeSessionEnvironment([string]$ProjectDir, [string]$RamDumpPath, [string]$ModsDir = '') {
+  return [ordered]@{
+    GCN_TIMESCALE  = '1'
+    GCN_CLOCKLOG   = '1'
+    GCN_INPUT      = $null
+    GCN_RAM_DUMP   = $RamDumpPath
+    GCN_WATCH_ADDR = '800000E4'
+    GCN_GUARD      = '800000E4'
+    GCN_FONT_DIR   = (Join-Path $ProjectDir 'assets\fonts')
+    GCN_MODS_DIR   = $(if ($ModsDir) { $ModsDir } else { $null })
+  }
+}
+
 # Only this project's assault.exe counts; an unrelated program with the same name must not
 # block launches. A process whose path cannot be read (for example one running elevated) is
 # still treated as running, so saves and asset packs are never changed under a live game.

@@ -275,6 +275,32 @@ try {
   [IO.File]::WriteAllText((Join-Path $recordDir 'native-build-info.json'),'{"schema_version":2,"game_id":"GF7E01"}')
   Assert-Equal 'GF7E01' (Read-NativeBuildRecord $scratch).game_id 'build record read'
 
+  # Session command line and environment (Start-NativeGame).
+  $session = Get-LauncherSettingDefaults
+  $session.disc = 'C:\Games\Star Fox\SFA.iso'
+  $plain = @(Get-NativeSessionArgumentList $session 'C:\hd' 'C:\dump')
+  Assert-Equal ('--vsync={0}' -f [int][bool]$session.vsync) ($plain | Where-Object { $_ -like '--vsync=*' }) 'vsync follows the profile'
+  Assert-Equal '--volume=100' ($plain | Where-Object { $_ -like '--volume=*' }) 'volume passed'
+  Assert-True ($plain -contains '--no-input-log') 'input log off by default'
+  Assert-True (-not ($plain | Where-Object { $_ -like '--deadzone=*' -or $_ -eq '--fullscreen' -or $_ -eq '--no-music' -or $_ -like '--controls=*' })) 'optional arguments absent by default'
+  Assert-Equal '"C:\Games\Star Fox\SFA.iso"' $plain[-1] 'game image last and quoted'
+  Assert-Equal (@(Get-NativeGraphicsArgumentList $session.scale $session.aspect $session.aa $session.filter) -join ' ') (($plain[0..3]) -join ' ') 'graphics arguments first'
+  $session.vsync = -not [bool]$session.vsync; $session.volume = 35; $session.deadzone = '7'; $session.fullscreen = $true
+  $session.inputLog = $true; $session.muteMusic = $true; $session.controls = 'D:\My Pads\controls.txt'; $session.anisotropy = '16'
+  $full = @(Get-NativeSessionArgumentList $session 'C:\hd' 'C:\dump')
+  foreach ($expected in @(('--vsync={0}' -f [int][bool]$session.vsync),'--volume=35','--deadzone=7','--fullscreen','--no-music','--controls="D:\My Pads\controls.txt"','--anisotropy=16')) {
+    Assert-True ($full -contains $expected) "session argument $expected"
+  }
+  Assert-True (-not ($full -contains '--no-input-log')) 'input log on when chosen'
+  Assert-Equal '"C:\Games\Star Fox\SFA.iso"' $full[-1] 'game image still last'
+  $envNoMods = Get-NativeSessionEnvironment 'C:\Proj' 'C:\Proj\run\s.ram.bin'
+  Assert-Equal $null $envNoMods.GCN_MODS_DIR 'no mods folder clears GCN_MODS_DIR'
+  Assert-True ($envNoMods.Contains('GCN_INPUT') -and $null -eq $envNoMods.GCN_INPUT) 'scripted input always cleared'
+  Assert-Equal '800000E4' $envNoMods.GCN_GUARD 'thread-pointer guard on'
+  Assert-Equal 'C:\Proj\assets\fonts' $envNoMods.GCN_FONT_DIR 'font folder'
+  Assert-Equal 'C:\Proj\run\s.ram.bin' $envNoMods.GCN_RAM_DUMP 'RAM dump path'
+  Assert-Equal 'C:\mods' (Get-NativeSessionEnvironment 'C:\Proj' 'x' 'C:\mods').GCN_MODS_DIR 'mods folder passed'
+
   $mine = [pscustomobject]@{ Path = $exe.ToUpperInvariant() }
   $other = [pscustomobject]@{ Path = (Join-Path $scratch 'elsewhere\assault.exe') }
   $hidden = [pscustomobject]@{ Path = $null }

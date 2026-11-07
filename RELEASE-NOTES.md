@@ -12,6 +12,13 @@
 - Each launcher page is now its own file under `tools/LauncherPages/`; the main script went
   from about 2,180 to about 1,290 lines. The same 71 functions exist with unchanged text,
   and all seven pages were opened in the window after the move.
+- Switching launcher pages is 3-5x faster: 170-260 ms (Systems & Controls 350-470 ms) instead
+  of 440-1,380 ms. The page is rebuilt while hidden, with window redraw paused, so the old page
+  stays on screen until the new one is ready.
+- Resizing or maximizing the window lays the current page out again for the new size once the
+  resize settles (not Systems & Controls while it has unsaved changes).
+- The game's session command line and environment are built by tested functions in
+  `tools/LauncherNative.ps1` (210 launcher core tests).
 
 # 0.2.0-rc.4 - Windows x64 source-build release candidate
 

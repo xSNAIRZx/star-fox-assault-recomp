@@ -13,6 +13,7 @@ try {
 [StructLayout(LayoutKind.Sequential)] public struct XInputGamepad { public ushort wButtons; public byte bLeftTrigger; public byte bRightTrigger; public short sThumbLX; public short sThumbLY; public short sThumbRX; public short sThumbRY; }
 [StructLayout(LayoutKind.Sequential)] public struct XInputState { public uint dwPacketNumber; public XInputGamepad Gamepad; }
 [DllImport("xinput1_4.dll")] public static extern int XInputGetState(int userIndex, out XInputState state);
+[DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 '@
   [void][PeregrineForge.Native]::SetProcessDPIAware()
 } catch {}
@@ -431,16 +432,8 @@ function Start-NativeGame {
     if (-not (Test-NativeBuildImage $script:discValue)) { throw 'This native build does not match the selected game image, or its build record is missing. Rebuild from the selected image before playing.' }
     Save-Settings
     [IO.Directory]::CreateDirectory($script:nativeRunDir) | Out-Null
-    $nativeArgs = Get-NativeGraphicsArguments
-    $nativeArgs += "--vsync=$([int]$script:vsyncValue)"
-    $nativeArgs += "--volume=$([int]$script:volumeValue)"
-    if ($script:deadzoneValue) { $nativeArgs += ('--deadzone={0}' -f $script:deadzoneValue) }
-    if($script:fullscreenValue){$nativeArgs += '--fullscreen'}
-    if (-not $script:logValue) { $nativeArgs += '--no-input-log' }
-    if ($script:muteValue) { $nativeArgs += '--no-music' }
-    if ($script:controlsValue) { $nativeArgs += ('--controls=' + (ConvertTo-NativeArgument $script:controlsValue)) }
-    $nativeArgs += Get-NativeEnhancementArgumentList $script:settings $script:hdTextureDir $script:textureDumpDir
-    $nativeArgs += (ConvertTo-NativeArgument $script:discValue)
+    # Save-Settings has just copied every setting into $script:settings.
+    $nativeArgs = Get-NativeSessionArgumentList $script:settings $script:hdTextureDir $script:textureDumpDir
     $logsDir = Join-Path $script:nativeRunDir 'logs'
     [IO.Directory]::CreateDirectory($logsDir) | Out-Null
     Remove-OldSessionLogs $logsDir
@@ -448,23 +441,12 @@ function Start-NativeGame {
     $stderr = Join-Path $logsDir ($sessionName + '.err')
     $stdout = Join-Path $logsDir ($sessionName + '.log')
     $ramDump = Join-Path $logsDir ($sessionName + '.ram.bin')
-    # GCN_WATCH_ADDR only reports in a diagnostic build, which the packaged build is not.
-    # The guard reports in any build, so a session that hits the current-thread crash
-    # carries the frame and the value either side of the change in its own log.
-    $sessionEnv = [ordered]@{
-      GCN_TIMESCALE  = '1'
-      GCN_CLOCKLOG   = '1'
-      GCN_INPUT      = $null
-      GCN_RAM_DUMP   = $ramDump
-      GCN_WATCH_ADDR = '800000E4'
-      GCN_GUARD      = '800000E4'
-      GCN_FONT_DIR   = (Join-Path $script:projectDir 'assets\fonts')
-      GCN_MODS_DIR   = $null
-    }
+    $modsDir = ''
     if($script:nativeModsValue) {
       if(-not(Test-Path -LiteralPath $script:nativeModsDir -PathType Container)){throw 'Install a native asset pack before enabling native mods.'}
-      $sessionEnv.GCN_MODS_DIR = $script:nativeModsDir
+      $modsDir = $script:nativeModsDir
     }
+    $sessionEnv = Get-NativeSessionEnvironment $script:projectDir $ramDump $modsDir
     $gameProcess = Invoke-WithProcessEnvironment $sessionEnv {
       Start-Process -FilePath $script:nativePath -ArgumentList $nativeArgs -WorkingDirectory $script:nativeRunDir -RedirectStandardError $stderr -RedirectStandardOutput $stdout -PassThru
     }
@@ -1085,6 +1067,7 @@ $script:backgroundResizeTimer.Interval = 80
 $script:backgroundResizeTimer.Add_Tick({
   $script:backgroundResizeTimer.Stop()
   Update-LauncherBackground
+  Update-PageAfterResize
 })
 $script:form.Add_FormClosed({
   if ($script:backgroundResizeTimer) { $script:backgroundResizeTimer.Stop(); $script:backgroundResizeTimer.Dispose(); $script:backgroundResizeTimer = $null }
@@ -1157,32 +1140,59 @@ function Show-Page([string]$page) {
   }
   $script:settingsDirty = $false
   $script:currentPage = $page
-  $script:content.SuspendLayout()
-  foreach ($c in @($script:content.Controls)) { $script:content.Controls.Remove($c); $c.Dispose() }
-  $script:content.AutoScrollPosition = [Drawing.Point]::new(0,0)
-  foreach ($key in $script:navButtons.Keys) {
-    $selected = ($key -eq $page)
-    $script:navButtons[$key].BackColor = if ($selected) { $script:colors.selection } else { [Drawing.Color]::Transparent }
-    $script:navButtons[$key].FlatAppearance.BorderSize = if ($selected) { 1 } else { 0 }
-    $script:navButtons[$key].FlatAppearance.BorderColor = if ($selected) { $script:colors.blue } else { $script:colors.line }
-    $script:navButtons[$key].ForeColor = if ($selected) { $script:colors.cyan } else { $script:colors.muted }
+  # Rebuilding a page in a visible panel cost 0.5-1.2 s: every control got a window handle and
+  # repainted over the stretched background as it was added and scaled. With the panel hidden,
+  # handles are created once when it is shown (0.15-0.4 s). The form stops redrawing meanwhile,
+  # so the old page stays on screen instead of flashing the bare background.
+  $redrawOff = $false
+  if ($script:form.IsHandleCreated) {
+    try { [void][PeregrineForge.Native]::SendMessage($script:form.Handle,0x000B,[IntPtr]::Zero,[IntPtr]::Zero); $redrawOff = $true } catch {}  # WM_SETREDRAW off
   }
-  if ($script:brandLabel) { $script:brandLabel.Visible = $true }
-  if ($script:brandSubLabel) { $script:brandSubLabel.Visible = $true }
-  if ($script:brandMark) { $script:brandMark.Visible = $true }
-  switch ($page) {
-    'Home' { Build-HomePage }
-    'Library' { Build-LibraryPage }
-    'Saves' { Build-SavesPage }
-    'Mods' { Build-ModsPage }
-    'Crashes' { Build-CrashesPage }
-    'Settings' { Build-SettingsPage }
-    'About' { Build-AboutPage }
+  try {
+    $script:content.Visible = $false
+    $script:content.SuspendLayout()
+    foreach ($c in @($script:content.Controls)) { $script:content.Controls.Remove($c); $c.Dispose() }
+    $script:content.AutoScrollPosition = [Drawing.Point]::new(0,0)
+    $script:pageBuiltSize = $script:content.Size
+    foreach ($key in $script:navButtons.Keys) {
+      $selected = ($key -eq $page)
+      $script:navButtons[$key].BackColor = if ($selected) { $script:colors.selection } else { [Drawing.Color]::Transparent }
+      $script:navButtons[$key].FlatAppearance.BorderSize = if ($selected) { 1 } else { 0 }
+      $script:navButtons[$key].FlatAppearance.BorderColor = if ($selected) { $script:colors.blue } else { $script:colors.line }
+      $script:navButtons[$key].ForeColor = if ($selected) { $script:colors.cyan } else { $script:colors.muted }
+    }
+    if ($script:brandLabel) { $script:brandLabel.Visible = $true }
+    if ($script:brandSubLabel) { $script:brandSubLabel.Visible = $true }
+    if ($script:brandMark) { $script:brandMark.Visible = $true }
+    switch ($page) {
+      'Home' { Build-HomePage }
+      'Library' { Build-LibraryPage }
+      'Saves' { Build-SavesPage }
+      'Mods' { Build-ModsPage }
+      'Crashes' { Build-CrashesPage }
+      'Settings' { Build-SettingsPage }
+      'About' { Build-AboutPage }
+    }
+    # Pages are laid out in 96-DPI units; scale each new top-level control once.
+    foreach ($c in @($script:content.Controls)) { Set-UiScale $c }
+  } finally {
+    # Always show the panel again, even if a page failed to build.
+    $script:content.ResumeLayout()
+    $script:content.Visible = $true
+    if ($redrawOff) {
+      try { [void][PeregrineForge.Native]::SendMessage($script:form.Handle,0x000B,[IntPtr]::new(1),[IntPtr]::Zero) } catch {}  # WM_SETREDRAW on
+      $script:form.Refresh()
+    } else { $script:content.Invalidate() }
   }
-  # Pages are laid out in 96-DPI units; scale each new top-level control once.
-  foreach ($c in @($script:content.Controls)) { Set-UiScale $c }
-  $script:content.ResumeLayout()
-  $script:content.Invalidate()
+}
+# Pages are built for the content size at the time (card widths, Home's bottom row), so after
+# the window is resized the current page is rebuilt once the resize settles. Settings with
+# unsaved edits is left alone: rebuilding it would discard them.
+function Update-PageAfterResize {
+  if (-not $script:currentPage -or -not $script:pageBuiltSize) { return }
+  if ($script:content.Size -eq $script:pageBuiltSize) { return }
+  if ($script:currentPage -eq 'Settings' -and $script:settingsDirty) { return }
+  Show-Page $script:currentPage
 }
 # Page sizes in 96-DPI units, for the page builders.
 function Get-ContentLogicalWidth { [int]($script:content.ClientSize.Width / $script:uiScale) }
