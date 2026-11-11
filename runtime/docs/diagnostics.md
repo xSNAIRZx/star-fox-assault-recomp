@@ -13,6 +13,30 @@ copies replays before the runtime writes scratch cards, and records build/launch
 does not establish that geometry, projection or render state is correct. The published
 rc.3 archive lacks the later vertex-check and live-stack additions; rebuild current source.
 
+## The session summary on stdout
+
+Every desktop run writes a few `[session]` lines to stdout (`session_report.h`), always on
+and flushed as written, so that the log a player attaches to a report says what a slow or
+broken run was running on. stdout because a launcher that splits the two streams into
+separate files, and a report tool that attaches one of them, most often takes stdout; the
+diagnostics on stderr are unchanged. The lines:
+
+- `machine:` the platform, the processor's brand string (x86 only), logical threads, RAM.
+- `power:` battery, charging, charged or mains, again whenever the source changes. A laptop
+  on battery often runs well under its clocks.
+- `gl:` vendor, renderer and version, as the driver reports them. This shows a laptop
+  running on its integrated GPU when it has another.
+- `shaders:` what the cache restored, or `no cache yet`: a first run compiles each program
+  the first time a draw needs it, which a player sees as stutter.
+- `graphics:` window and drawable size, vsync, internal scale and the other display
+  settings in effect.
+- `frames, last 30s:` every 30 seconds, the average rate, the median and 99th-percentile
+  frame time (1 ms buckets; a game may hold 60 on one screen and 30 on the next, so these
+  say more than a count against a fixed threshold), the longest frame and how many took
+  over 50 ms, and the power source.
+- `session total, over Ns:` the same for the whole run, at a normal exit only. A killed or
+  crashed run ends at its last 30-second line.
+
 ## Input logging and replay
 
 Every run of the desktop frontend records the controller state the guest polled, keyed by

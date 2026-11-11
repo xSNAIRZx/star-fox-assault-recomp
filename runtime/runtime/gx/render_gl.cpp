@@ -3,6 +3,7 @@
 // One source serves desktop OpenGL 3.3 core and OpenGL ES 3.2; where the two profiles
 // differ, the difference is confined to the small block of helpers below.
 #include "../runtime.h"
+#include "../session_report.h"
 #include "render.h"
 #include "render_gl.h"
 #include "shadergen.h"
@@ -708,6 +709,10 @@ static void shader_cache_open() {
         }
         fclose(f);
     }
+    // A first run: every program is built the first time a draw needs it, mid-play, which a
+    // player sees as stutter. A report should say so.
+    if (L.data.empty())
+        session_report::note("shaders: no cache yet; programs are compiled as the game first draws with them");
     uint32_t magic = 0, ver = 0;
     uint64_t drv = 0;
     if (L.data.size() >= 16) {
@@ -864,6 +869,8 @@ bool render_shader_cache_step(double budget_ms, int* done, int* total) {
             }
             fprintf(stderr, "[shaders] %d programs from cache (%d from binaries, %d compiled, %zu of them from the game's key list) in %.0f ms\n",
                     L.from_binary + L.compiled, L.from_binary, L.compiled, L.shipped.size(), ms_since(L.t0));
+            session_report::note("shaders: %d programs from cache (%d from binaries, %d compiled) in %.0f ms",
+                                 L.from_binary + L.compiled, L.from_binary, L.compiled, ms_since(L.t0));
             L.active = false;
             L.data.clear();
             L.data.shrink_to_fit();

@@ -12,6 +12,7 @@
 #include "vr_game.h"
 #include "telemetry.h"
 #include "record.h"
+#include "session_report.h"
 #ifdef GCN_OPENXR
 #include "xr_desktop.h"
 #endif
@@ -311,6 +312,26 @@ static bool parse_integer_option(const char* text, int low, int high, int& value
     return true;
 }
 
+// The power source, for session_report: a laptop on battery often runs at a fraction of
+// its clocks, which is the first thing to know about a report of a slow game.
+static void report_power() {
+    int percent = -1;
+    const char* state = "unknown";
+    switch (SDL_GetPowerInfo(nullptr, &percent)) {
+        case SDL_POWERSTATE_ON_BATTERY: state = "battery"; break;
+        case SDL_POWERSTATE_CHARGING: state = "charging"; break;
+        case SDL_POWERSTATE_CHARGED: state = "charged"; break;
+        case SDL_POWERSTATE_NO_BATTERY: state = "mains"; percent = -1; break;
+        default: percent = -1; break;
+    }
+    session_report::set_power(state, percent);
+}
+
+static const char* gl_string(GLenum name) {
+    const char* s = (const char*)glGetString(name);
+    return s ? s : "?";
+}
+
 static void apply_display_toggle(gx::DisplayAspect& aspect, bool fxaa, bool sharp) {
     if (!g_toggle_display_aspect) return;
     g_toggle_display_aspect = false;
@@ -516,6 +537,8 @@ int main(int argc, char** argv) {
     SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1");
 #endif
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER | SDL_INIT_HAPTIC) != 0) fatal("SDL_Init: %s", SDL_GetError());
+    session_report::machine(SDL_GetPlatform(), SDL_GetCPUCount(), SDL_GetSystemRAM());
+    report_power();
     input_map_load(controls);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     const bool gl_debug = getenv("GCN_GL_DEBUG") != nullptr;
@@ -563,6 +586,7 @@ int main(int argc, char** argv) {
               glGetString(GL_RENDERER) ? (const char*)glGetString(GL_RENDERER) : "?", kGLHelp);
     }
     LOG(LOG_GX, "GL: %s / %s", glGetString(GL_RENDERER), glGetString(GL_VERSION));
+    session_report::note("gl: %s / %s / %s", gl_string(GL_VENDOR), gl_string(GL_RENDERER), gl_string(GL_VERSION));
     if (gl_debug) gl_debug_enable(SDL_GL_GetProcAddress);
     // Beside the memory card: both are state this machine accumulates for this game.
     plat_make_dirs("saves");
@@ -593,6 +617,13 @@ int main(int argc, char** argv) {
     fprintf(stderr, "graphics: OpenGL, aspect=%s, aa=%s, filter=%s, scale=%.2f%s\n",
             aspect_name, fxaa ? "fxaa" : "off", sharp ? "sharp" : "smooth", active_scale,
             scale == 0.0f ? " (match window)" : "");
+    session_report::note("graphics: %s, window %dx%d, drawable %dx%d, vsync=%d, scale=%.2f%s, aspect=%s, aa=%s, "
+                         "filter=%s, anisotropy=%d, trilinear=%d, soft-particles=%d, texture-pack=%s",
+                         (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN) ? "fullscreen" : "windowed",
+                         window_w, window_h, drawable_w, drawable_h, SDL_GL_GetSwapInterval(), active_scale,
+                         scale == 0.0f ? " (match window)" : "", aspect_name, fxaa ? "fxaa" : "off",
+                         sharp ? "sharp" : "smooth", anisotropy, trilinear ? 1 : 0, soft_particles ? 1 : 0,
+                         texture_pack_dir ? "on" : "off");
     if (test_graphics) {
         bool ok = gx::render_test_display_options();
         const auto before = aspect;
@@ -696,10 +727,12 @@ int main(int argc, char** argv) {
                 record::frame(0, rw, rh);
             }
             SDL_GL_SwapWindow(win);
+            session_report::frame_presented();
             frames++;
             auto now = std::chrono::steady_clock::now();
             double secs = std::chrono::duration<double>(now - t0).count();
             if (secs >= 2.0) {
+                report_power();
                 char title[128];
                 snprintf(title, sizeof(title), GCN_APP_LABEL " - %.1f fps - Mouse %s%s", frames / secs,
                          g_mouse.mode == desktop_input::MouseMode::Aim ? "Aim" : "Flight",
@@ -710,6 +743,7 @@ int main(int argc, char** argv) {
             }
         }
     }
+    session_report::finish();
     record::finish();
     if (g_mouse.captured) { SDL_SetRelativeMouseMode(SDL_FALSE); SDL_ShowCursor(SDL_ENABLE); }
     input_log_end();
