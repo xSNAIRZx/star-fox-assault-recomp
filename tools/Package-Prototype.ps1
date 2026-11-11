@@ -111,7 +111,7 @@ try {
   $hostToolHashBefore = (Get-FileHash -LiteralPath $hostToolPath -Algorithm SHA256).Hash
   $nativeHashBefore = if ($IncludeNativePrototype) { (Get-FileHash -LiteralPath $nativePath -Algorithm SHA256).Hash } else { $null }
 
-  foreach ($file in @('Launch-StarFoxAssault.ps1','Start-StarFoxAssault.cmd','Star Fox Assault Recomp.exe','CMakeLists.txt','LICENSE','THIRD_PARTY_NOTICES.md','CREDITS.md','RELEASE-NOTES.md','portable.txt')) {
+  foreach ($file in @('Launch-StarFoxAssault.ps1','Start-StarFoxAssault.cmd','Star Fox Assault Recomp.exe','CMakeLists.txt','LICENSE','THIRD_PARTY_NOTICES.md','CREDITS.md','RELEASE-NOTES.md','portable.txt','recomplauncher.json')) {
     Add-PackageFile (Join-Path $projectDir $file) $file -BinaryException:($file -like '*.exe')
   }
   Add-PackageFile $hostToolPath 'tools/native/assault-image-tool.exe' -BinaryException
@@ -153,7 +153,7 @@ try {
 
   $required = @(
     'Launch-StarFoxAssault.ps1','Start-StarFoxAssault.cmd','Star Fox Assault Recomp.exe',
-    'tools/native/assault-image-tool.exe','tools/portable-toolchain.json','release.json','LICENSE','CREDITS.md','RELEASE-NOTES.md','portable.txt','CMakeLists.txt','THIRD_PARTY_NOTICES.md',
+    'tools/native/assault-image-tool.exe','tools/portable-toolchain.json','release.json','recomplauncher.json','LICENSE','CREDITS.md','RELEASE-NOTES.md','portable.txt','CMakeLists.txt','THIRD_PARTY_NOTICES.md',
     'assets/assault-launcher-background.png','assets/fonts/font_western.bin',
     'assets/assault-arwing-hangar.png','assets/assault-arwing-hangar.prompt.txt',
     'assets/peregrine-assault-flightdeck.png','assets/peregrine-assault-flightdeck.prompt.txt',

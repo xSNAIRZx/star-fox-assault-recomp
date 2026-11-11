@@ -1,5 +1,7 @@
 # Peregrine Forge — Star Fox Assault Recomp
 
+<a href="https://recomplauncher.com"><picture><source media="(prefers-color-scheme: dark)" srcset="https://recomplauncher.com/assets/press/launcher/badge-light.svg"><img alt="Get it on RecompLauncher" src="https://recomplauncher.com/assets/press/launcher/badge-dark.svg" height="48"></picture></a>
+
 **Release gate:** see [RELEASE-READINESS.md](RELEASE-READINESS.md) for current build/test evidence,
 reproduction commands, distribution boundaries and the unresolved gameplay blockers.
 
