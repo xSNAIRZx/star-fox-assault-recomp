@@ -1,3 +1,17 @@
+# Unreleased — RecompLauncher support
+
+- Packages carry `recomplauncher.json` at the top, so [RecompLauncher](https://recomplauncher.com)
+  can set the game up from the player's own USA disc image, show its graphics, audio and
+  controller options on the game's page, and start it. Its setup step runs the same build
+  worker as Import & Build, and saves, logs and the build record stay under `user-data/`,
+  so Peregrine Forge and RecompLauncher share them.
+- The launcher exe has two windowless modes for this, used only when RecompLauncher passes
+  them: `--prepare --game <image>` (builds and prints progress lines) and
+  `--play --game <image>` (starts the native build the way Play Native does). Opening the exe
+  without arguments opens Peregrine Forge as before.
+- The update installer accepts `recomplauncher.json`. Installers from rc.4 and earlier don't,
+  so they refuse a package that contains it: extract that package fresh instead (keep `user-data`).
+
 # Unreleased — 2026-11-07 repository housekeeping
 
 - The launcher exe (`Star Fox Assault Recomp.exe`) is no longer stored in Git. Packages and

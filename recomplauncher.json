@@ -1,0 +1,147 @@
+{
+  "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
+  "format": 1,
+  "name": "Star Fox Assault Recomp",
+  "repo": "xSNAIRZx/star-fox-assault-recomp",
+  "game": {
+    "kind": "iso",
+    "label": "Your disc image (.iso or .ciso) of the USA GameCube release, GF7E01.",
+    "check": { "ids": ["GF7E01"] },
+    "dumps": [
+      { "name": "USA", "size": 1459978240, "crc32": "07166d23" }
+    ]
+  },
+  "prepare": {
+    "program": ["Star Fox Assault Recomp.exe"],
+    "args": ["--prepare", "--game", "{game}"],
+    "label": "Recompiling the game from your disc. The first time downloads about 280 MB of build tools and can take 20 minutes or more.",
+    "timeout": 5400
+  },
+  "start": {
+    "program": ["Star Fox Assault Recomp.exe"],
+    "args": ["--play", "--game", "{game}", "--no-input-log"]
+  },
+  "saves": ["{install}/user-data/native-run/saves/memcard_a.raw"],
+  "folders": {
+    "saves": [{ "path": "{install}/user-data/native-run/saves" }],
+    "logs": [{ "path": "{install}/user-data/native-run/logs" }],
+    "backups": [{ "path": "{install}/user-data/save-backups" }]
+  },
+  "exit_codes": {
+    "3": "The game hasn't been built from your disc yet. Run its setup again on the game's page.",
+    "4": "The game was built from a different copy of the disc. Run its setup again on the game's page.",
+    "5": "It couldn't find your copy of the game. Pick it again on the game's page."
+  },
+  "looks": {
+    "allowed": false,
+    "reason": "The game starts through its own launcher, so looks can't attach to it. Use its Anti-aliasing and Output filter settings instead."
+  },
+  "settings": [
+    {
+      "id": "resolution", "label": "Resolution", "in": "args",
+      "help": "What the game draws at. 1x is the GameCube's own 480 lines; higher sharpens edges but keeps the original textures.",
+      "choices": [
+        { "label": "2x (960p)", "args": [] },
+        { "label": "1x (480p)", "args": ["--scale=1"] },
+        { "label": "1.5x (720p)", "args": ["--scale=1.5"] },
+        { "label": "3x (1440p)", "args": ["--scale=3"] },
+        { "label": "4x (1920p)", "args": ["--scale=4"] },
+        { "label": "6x (2880p)", "args": ["--scale=6"] },
+        { "label": "Match window", "args": ["--scale=0"] }
+      ]
+    },
+    {
+      "id": "aspect", "label": "Aspect ratio", "in": "args",
+      "help": "4:3 is the picture as designed. 16:9 is experimental: some objects at the edges can pop in late. F8 switches during play.",
+      "choices": [
+        { "label": "Original 4:3", "args": [] },
+        { "label": "Widescreen 16:9", "args": ["--aspect=widescreen"] },
+        { "label": "Stretch", "args": ["--aspect=stretch"] }
+      ]
+    },
+    {
+      "id": "window", "label": "Window", "in": "args",
+      "help": "Big Picture mode always starts full screen. Alt+Enter switches during play.",
+      "choices": [
+        { "label": "Windowed", "args": [] },
+        { "label": "Fullscreen", "args": ["--fullscreen"] }
+      ]
+    },
+    {
+      "id": "vsync", "label": "V-Sync", "in": "args",
+      "help": "Waits for your screen's refresh to stop tearing.",
+      "choices": [
+        { "label": "Off", "args": [] },
+        { "label": "On", "args": ["--vsync=1"] }
+      ]
+    },
+    {
+      "id": "aa", "label": "Anti-aliasing", "in": "args",
+      "help": "FXAA smooths jagged edges but softens text a little.",
+      "choices": [
+        { "label": "Off", "args": [] },
+        { "label": "FXAA", "args": ["--aa=fxaa"] }
+      ]
+    },
+    {
+      "id": "filter", "label": "Output filter", "in": "args",
+      "help": "How the picture is fitted to your window. Sharp keeps text crisp.",
+      "choices": [
+        { "label": "Sharp", "args": [] },
+        { "label": "Smooth", "args": ["--filter=smooth"] }
+      ]
+    },
+    {
+      "id": "anisotropy", "label": "Texture filtering", "in": "args",
+      "help": "Keeps ground and walls sharp at shallow angles. Costs very little.",
+      "choices": [
+        { "label": "Game's own", "args": [] },
+        { "label": "2x", "args": ["--anisotropy=2"] },
+        { "label": "4x", "args": ["--anisotropy=4"] },
+        { "label": "8x", "args": ["--anisotropy=8"] },
+        { "label": "16x", "args": ["--anisotropy=16"] }
+      ]
+    },
+    {
+      "id": "trilinear", "label": "Trilinear mipmaps", "in": "args",
+      "help": "Blends between texture detail levels so distant surfaces don't shimmer.",
+      "choices": [
+        { "label": "Off", "args": [] },
+        { "label": "On", "args": ["--trilinear=1"] }
+      ]
+    },
+    {
+      "id": "soft_particles", "label": "Soft particles", "in": "args",
+      "help": "Smoke and explosions fade where they meet the ground instead of cutting off. Can dim some glow effects.",
+      "choices": [
+        { "label": "Off", "args": [] },
+        { "label": "On", "args": ["--soft-particles=1"] }
+      ]
+    },
+    {
+      "id": "music", "label": "Music", "in": "args",
+      "help": "Mutes the streamed music and keeps the sound effects.",
+      "choices": [
+        { "label": "On", "args": [] },
+        { "label": "Muted", "args": ["--no-music"] }
+      ]
+    },
+    {
+      "id": "deadzone", "label": "Stick deadzone", "in": "args",
+      "help": "How far a stick moves before the game notices. Raise it if your ship drifts.",
+      "choices": [
+        { "label": "Game's own", "args": [] },
+        { "label": "5%", "args": ["--deadzone=5"] },
+        { "label": "10%", "args": ["--deadzone=10"] },
+        { "label": "15%", "args": ["--deadzone=15"] },
+        { "label": "20%", "args": ["--deadzone=20"] },
+        { "label": "30%", "args": ["--deadzone=30"] }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "saves", "label": "Saves", "help": "Your memory card.", "open": "saves" },
+    { "id": "backups", "label": "Save backups", "help": "Backups made by the Peregrine Forge launcher.", "open": "backups" },
+    { "id": "logs", "label": "Logs", "help": "A log for each session, for bug reports.", "open": "logs" }
+  ]
+}
