@@ -76,7 +76,7 @@ function Test-UpdatePath([string]$path) {
   $extension = [IO.Path]::GetExtension($normalized).ToLowerInvariant()
   if ($extension -in $forbiddenExtensions) { return $false }
   switch -Regex ($normalized) {
-    '^(Launch-StarFoxAssault\.ps1|Start-StarFoxAssault\.cmd|Star Fox Assault Recomp\.exe|CMakeLists\.txt|LICENSE|THIRD_PARTY_NOTICES\.md|README-PROTOTYPE\.txt|README\.md|ROADMAP\.md|RELEASE-READINESS\.md|SHA256SUMS\.txt|release\.json|CREDITS\.md|RELEASE-NOTES\.md|VALIDATION\.md|portable\.txt)$' { return $true }
+    '^(Launch-StarFoxAssault\.ps1|Start-StarFoxAssault\.cmd|Star Fox Assault Recomp\.exe|CMakeLists\.txt|LICENSE|THIRD_PARTY_NOTICES\.md|README-PROTOTYPE\.txt|README\.md|ROADMAP\.md|RELEASE-READINESS\.md|SHA256SUMS\.txt|release\.json|recomplauncher\.json|CREDITS\.md|RELEASE-NOTES\.md|VALIDATION\.md|portable\.txt)$' { return $true }
     '^build-desktop/Release/assault\.exe$' { return $true }
     '^tools/native/assault-image-tool\.exe$' { return $true }
     '^tools/portable-toolchain\.json$' { return $true }
