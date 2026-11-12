@@ -40,14 +40,16 @@ replace DOL/REL game code. Online update and mod services are not included.
 PROJECT STATUS
 
 This is an experimental source-build release candidate, not a complete or stable
-game release. The rc.4 archive passed structural, checksum, content-filter and
+game release. The rc.5 archive passed structural, checksum, content-filter and
 PowerShell parser checks. The rc.2 package completed an empty-cache online build
 and a bounded hidden boot on the tested machine; those runtime checks were not
-repeated for rc.3 or rc.4. See VALIDATION.md for the scope of that evidence. First-mission
+repeated through the launcher for rc.3, rc.4 or rc.5. See VALIDATION.md for the scope of that evidence. First-mission
 flight and profile persistence have been tested.
-The first-boss visibility report, an invalid-current-thread-pointer crash, later
-missions, mission completion, full audio fidelity and all physical controllers
-remain unverified. Widescreen is experimental. See RELEASE-NOTES.md and
+A crash on a mission's third load (after retrying it twice) is fixed and was
+checked over five mission loads in a scripted run. The first-boss visibility fix
+still needs live confirmation, the reported current-thread-pointer crash has not
+reproduced in testing, and later missions, mission completion, full audio fidelity
+and all physical controllers remain unverified. Widescreen is experimental. See RELEASE-NOTES.md and
 VALIDATION.md for the release scope and known limits.
 
 The included LICENSE covers original project software source; CREDITS.md,

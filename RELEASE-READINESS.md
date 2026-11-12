@@ -108,7 +108,7 @@ checklist; do not invent an approval or claim its dynamic form has been validate
   thread-pointer failures remain; full-game compatibility is unverified.
 - Pictures: `docs/images/launcher-home.png`, `launcher-settings.png`, `project-cover.png`.
   Label artwork as launcher concept artwork; it is not gameplay evidence.
-- Download: hold pending final candidate validation. Do not present rc.4 (or any
+- Download: hold pending final candidate validation. Do not present rc.5 (or any
   earlier candidate) as gameplay-validated.
 
 The project's release standard is stricter than the public site's short intake

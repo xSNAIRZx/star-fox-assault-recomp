@@ -15,9 +15,9 @@ An experimental Windows x64 native recompilation project for the USA GameCube re
 
 *Custom project cover based on the launcher's hangar artwork. This is fan-project artwork, not the original retail box cover.*
 
-[Latest available download: experimental 0.2.0-rc.4](https://github.com/xSNAIRZx/star-fox-assault-recomp/releases/tag/v0.2.0-rc.4) · [Planned updates](ROADMAP.md) · [Validation and known issues](VALIDATION.md)
+[Latest available download: experimental 0.2.0-rc.5](https://github.com/xSNAIRZx/star-fox-assault-recomp/releases/tag/v0.2.0-rc.5) · [Planned updates](ROADMAP.md) · [Validation and known issues](VALIDATION.md)
 
-The rc.4 download packages the launcher, builder and HD work through 5 November 2026. It is still an experimental candidate: see the status below.
+The rc.5 download adds the fix for a crash on a mission's third load, RecompLauncher support and launcher speed-ups. It is still an experimental candidate: see the status below.
 
 ## Launcher preview
 
@@ -38,9 +38,9 @@ The distribution contains source, original launcher artwork, licensed display an
 
 ## Experimental status
 
-The current source candidate is **0.2.0-rc.4**. Its package archive passed extraction, payload-hash, forbidden-content, asset-allowlist and PowerShell parser checks, and the update install and rollback tests. The empty-cache **Import & Build** and bounded startup evidence below is from rc.2; those checks were not repeated through the launcher UI for rc.3 or rc.4. This evidence verifies setup and limited startup only, not full-game compatibility.
+The current source candidate is **0.2.0-rc.5**. Its package archive passed extraction, payload-hash, forbidden-content, asset-allowlist and PowerShell parser checks, and the update install and rollback tests. The empty-cache **Import & Build** and bounded startup evidence below is from rc.2; those checks were not repeated through the launcher UI for rc.3, rc.4 or rc.5. This evidence verifies setup and limited startup only, not full-game compatibility.
 
-First-mission flight, readable menus and saved-profile persistence have been tested. **The recorded first-boss disappearance is prevented by the combined arithmetic candidate in a bounded diagnostic replay; fresh live confirmation and boss completion are pending. The current-thread-pointer crash remains unresolved.** Mission completion, later missions, complete audio fidelity and all physical controllers have not been verified. This release candidate is suitable for testing; it is not a stable full-game release.
+First-mission flight, readable menus and saved-profile persistence have been tested. **A crash on a mission's third load (after retrying it twice) is fixed and was checked over five mission loads in a scripted run. The recorded first-boss disappearance is prevented by the arithmetic fix in a recorded replay; live confirmation through the boss fight is pending. The current-thread-pointer crash has not reproduced in any test run, before or after that fix; it may have shared the fixed cause, but that is not established.** Mission completion, later missions, complete audio fidelity and all physical controllers have not been verified. This release candidate is suitable for testing; it is not a stable full-game release.
 
 The native runtime uses OpenGL. Graphics options include Match window or 1x–6x internal resolution, original 4:3, experimental 16:9, stretch, FXAA, Sharp/Smooth output filtering, fullscreen and VSync. Original 4:3 preserves the intended composition. Widescreen changes the 3D projection but still has game-specific culling limits. F8 switches Original/Wide during play; Alt+Enter toggles fullscreen. Higher resolution improves geometry edges without replacing original textures. Sharp with AA Off avoids FXAA softening.
 

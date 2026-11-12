@@ -1,4 +1,20 @@
-# Unreleased — 2026-11-11 mission-retry crash fixed
+# 0.2.0-rc.5 - Windows x64 source-build release candidate
+
+Experimental prerelease, not a stable full-game release. The headline is a crash fix: the
+native build crashed on the third load of a mission (after retrying it twice). Also new:
+RecompLauncher support (with its `--play` mode fixed), faster launcher pages, an always-on
+session summary in each session's log for bug reports, and the housekeeping below.
+
+<!-- rc5-checks -->
+
+Known issues: the first-boss visibility fix still needs live confirmation through the boss
+fight; the reported current-thread-pointer crash has not reproduced in any test run, before
+or after the mission-reload fix; later missions, mission completion, complete audio fidelity
+and physical controllers remain unverified. Updating from rc.4 or earlier with the launcher's
+Install Local ZIP is refused (those installers do not know `recomplauncher.json`): extract
+rc.5 into a fresh folder and copy your old `user-data` folder into it.
+
+## 2026-11-11 mission-retry crash fixed
 
 - **Fixed a crash on the third load of a mission** (for example after losing all lives twice
   and retrying). The game loads each mission's code module again on every attempt; on the
@@ -14,10 +30,14 @@
 - The replacement system fonts are pinned to their upstream source: byte-identical to Dolphin's
   `Data/Sys/GC` files at commit `0f1ce0e1f42a`, recorded with their SHA-256 in
   `THIRD_PARTY_NOTICES.md`.
+- Every desktop session writes `[session]` lines to its stdout log: machine, power source,
+  OpenGL renderer, shader cache, display settings, and every 30 s plus at exit the frame rate
+  and frame-time percentiles. A player's attached log now says enough to diagnose speed
+  reports (see `runtime/docs/diagnostics.md`).
 - `GCN_REL_TRACE=1` prints every code-module load the runtime sees and reports a module that
   is still running after its memory was reused (for diagnosing similar reports).
 
-# Unreleased — RecompLauncher support
+## RecompLauncher support
 
 - Packages carry `recomplauncher.json` at the top, so [RecompLauncher](https://recomplauncher.com)
   can set the game up from the player's own USA disc image, show its graphics, audio and
@@ -31,7 +51,7 @@
 - The update installer accepts `recomplauncher.json`. Installers from rc.4 and earlier don't,
   so they refuse a package that contains it: extract that package fresh instead (keep `user-data`).
 
-# Unreleased — 2026-11-07 repository housekeeping
+## 2026-11-07 repository housekeeping
 
 - The launcher exe (`Star Fox Assault Recomp.exe`) is no longer stored in Git. Packages and
   CI artifacts still include it: the packager builds it from `tools/LauncherBootstrap.cs`.
