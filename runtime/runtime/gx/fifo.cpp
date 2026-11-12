@@ -6,6 +6,7 @@
 #include "render.h"
 #include "render_gl.h"
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
@@ -122,6 +123,57 @@ static void poke_frame() {
         if (k.bits == 8) mem_w8(k.addr, (uint8_t)k.value);
         else if (k.bits == 16) mem_w16(k.addr, (uint16_t)k.value);
         else mem_w32(k.addr, k.value);
+    }
+}
+
+// GCN_FST_ALIAS=FROM=TO,... points the disc's file table entry for FROM at TO's data (file
+// names compared without directory or case), once, at the end of the first frame after the
+// OS has loaded the table (its address and size are at 0x80000038 and 0x8000003C). For
+// reaching content a scripted run cannot get to -- a later level's code module loaded where
+// the first level's is -- without a save that unlocks it. It changes what the game loads, so
+// it is for diagnosis only, and says so on stderr.
+static void fst_alias_frame() {
+    static bool done = false;
+    if (done) return;
+    const char* e = getenv("GCN_FST_ALIAS");
+    if (!e || !*e) { done = true; return; }
+    const uint32_t fst = mem_r32(0x80000038), size = mem_r32(0x8000003C);
+    if (fst < 0x80000000u || fst >= 0x81800000u || size < 12) return;  // not loaded yet
+    done = true;
+    const uint32_t count = mem_r32(fst + 8);  // the root entry's length is the entry count
+    if (!count || count > size / 12) { fprintf(stderr, "[fst] alias: file table at %08X looks invalid\n", fst); return; }
+    const uint32_t strings = fst + count * 12;
+    auto name_of = [&](uint32_t i) {
+        std::string n;
+        for (uint32_t a = strings + (mem_r32(fst + i * 12) & 0xFFFFFF); n.size() < 128; a++) {
+            const char ch = (char)mem_r8(a);
+            if (!ch) break;
+            n += (char)tolower((unsigned char)ch);
+        }
+        return n;
+    };
+    auto find = [&](std::string want) -> int {
+        for (char& ch : want) ch = (char)tolower((unsigned char)ch);
+        for (uint32_t i = 1; i < count; i++)
+            if (!(mem_r32(fst + i * 12) >> 24) && name_of(i) == want) return (int)i;  // files only
+        return -1;
+    };
+    for (const char* p = e; *p;) {
+        const char* eq = strchr(p, '=');
+        const char* end = strchr(p, ',');
+        if (!end) end = p + strlen(p);
+        if (eq && eq < end) {
+            const std::string from(p, eq), to(eq + 1, end);
+            const int a = find(from), b = find(to);
+            if (a < 0 || b < 0) {
+                fprintf(stderr, "[fst] alias %s=%s: %s not found in the file table\n", from.c_str(), to.c_str(), a < 0 ? from.c_str() : to.c_str());
+            } else {
+                mem_w32(fst + a * 12 + 4, mem_r32(fst + b * 12 + 4));
+                mem_w32(fst + a * 12 + 8, mem_r32(fst + b * 12 + 8));
+                fprintf(stderr, "[fst] alias: %s now reads %s (diagnostic, changes the game)\n", from.c_str(), to.c_str());
+            }
+        }
+        p = *end ? end + 1 : end;
     }
 }
 
@@ -430,6 +482,7 @@ static void skim_sync(gx::SkimSync kind, uint32_t value, std::vector<uint8_t>&) 
         heap_trace_frame(gx::g_frames_submitted.load());
         ram_dump_frame(gx::g_frames_submitted.load());
         poke_frame();
+        fst_alias_frame();
         if (g_guest_frame_hook) g_guest_frame_hook(gx::g_frames_submitted.load());
         break;
     }

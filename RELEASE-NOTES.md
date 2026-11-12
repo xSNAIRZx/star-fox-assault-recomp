@@ -1,3 +1,11 @@
+# Unreleased — 2026-11-12 after rc.6
+
+- Checked: the frame-rate dips at the start of a session and on loading/briefing screens are
+  scenes the game itself runs at 30 fps; a warm shader cache does not change them.
+- `GCN_FST_ALIAS` diagnostic for loading one disc file in place of another. Swapping another
+  mission's code module into mission 1's slot is not a valid test of later missions (their
+  stage data is chosen elsewhere); later missions remain unverified. See `docs/VALIDATION.md`.
+
 # 0.2.0-rc.6 - Windows x64 source-build release candidate
 
 Experimental prerelease, not a stable full-game release. Adds one-press controller binding

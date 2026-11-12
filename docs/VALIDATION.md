@@ -317,6 +317,28 @@ provides their own supported game image and builds locally.
 
 ## Validation log
 
+### 2026-11-12 — shader cache, frame pacing, and other modules in mission 1's slot
+
+**Frame-rate dips are the game's own 30 fps scenes.** Two five-minute normal-speed runs, one
+with no shader cache and one starting from the first run's cache (all 27 programs restored in
+145 ms), dipped in the same places (44-51 fps in the first and third 30-second windows). The
+clock log shows guest time keeping pace with host time throughout, and the game presenting
+30 frames per guest second in the intro and briefing/loading screens and 60 elsewhere. So the
+dips are scenes the game itself runs at 30 fps, not the PC falling behind or shader stutter.
+
+**Other code modules in mission 1's slot.** The new diagnostic `GCN_FST_ALIAS=m9.rel=X.rel`
+points the disc's file table entry for mission 1's module at another module's data. Results
+with the scripted mission input, lives held, 150 s each: `m10` ran a different space mission
+with its planet and fleet rendered and no fault; `md0` played a cutscene and showed a
+ground-level corridor stage with no fault; `m8` ran an empty starfield (its stage data never
+loaded); `m6` stayed on the loading screen; `m1` is a developer test screen; `m0` and the
+multiplayer maps `mb01a`, `mb02` and `mbg0` stayed black; `m009`, `m7` and `m3` stopped with
+a bad indirect call or memory access. A mission's stage data is chosen by the game's own
+mission state before its module is loaded, so a swapped module runs against mission 1's
+data, and these failures cannot be told apart from that mismatch: they are not evidence of
+recompilation faults. Testing later missions properly needs a save with progress (or the
+game's mission index, not found here). Later missions remain unverified.
+
 ### 2026-11-11 — build safety and a normal-speed session
 
 Build safety on current source: `tools/Test-NativeBuildSafety.ps1` passed (an invalid image

@@ -524,6 +524,14 @@ so the variants never mix with the real ones).
   before it reaches what is being checked. Find the address with `GCN_RAM_DUMP_AT` first. It
   changes what the game does, says so on stderr (`[poke] holding ...`), and is for diagnosis
   only; the addresses belong in the game project's notes, not here.
+- `GCN_FST_ALIAS=FROM=TO,...` points the disc file table's entry for FROM at TO's data
+  (names without directory, any case), once, at the end of the first frame after the OS has
+  loaded the table (address and size at 0x80000038/0x8000003C), so opening FROM reads TO: for
+  reaching content a scripted run cannot get to, such as another level's code module in the
+  first level's place. A game that picks a level's data by its own state will run the swapped
+  module against the wrong data, so a failure there is not by itself a recompilation fault.
+  It changes what the game loads, says so on stderr (`[fst] alias: ...`), and is for diagnosis
+  only.
 - `GCN_TOKLOG=1` prints every PE token as it is signalled, and every draw-done (finish)
   as it is raised and acknowledged, with a note when one is raised while the last is
   still pending.
