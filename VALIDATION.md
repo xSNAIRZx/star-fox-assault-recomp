@@ -227,8 +227,10 @@ That fresh executable then ran the scripted first-mission input unpaced for 25 m
 into a reused module and no thread-pointer guard report, and the last frames show the
 briefing, the Select Game menu, the mission and a cutscene rendering normally.
 
-The published package differs from that candidate only in documentation files carrying this
-evidence. Not run: the launcher window's Import & Build, an online tool download, play by a
+The published package differs from that candidate in the documentation files carrying this
+evidence and in the launcher exe's bytes: the packager rebuilds it from unchanged source, and
+the in-box C# compiler does not reproduce identical bytes. The published exe was checked
+separately (see the release notes on GitHub). Not run: the launcher window's Import & Build, an online tool download, play by a
 person, audio by ear, controllers.
 
 ## rc.4 package checks — 2026-11-05
