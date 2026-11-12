@@ -84,7 +84,7 @@ carries the live guest stack under it.
 
 - [ ] Expand coverage to later missions, transitions, save/reload and longer normal-speed sessions.
 - [ ] Repeat setup on additional Windows PCs with no preinstalled compiler or populated tool cache.
-- [ ] Recheck offline rebuilds, cancellation, failed builds, update rollback and save preservation.
+- [ ] Recheck offline rebuilds, cancellation, failed builds, update rollback and save preservation. Rechecked 2026-11-11 on current source: an invalid image fails and a pre-cancelled build stops, a full build cancelled 20% into compiling stopped within about a second with no compiler processes left, and every time the installed executable was unchanged; offline rebuilds ran all day; update rollback and preservation pass in the update tests. Save preservation through the window is not checked.
 - [ ] Audit the release contents and checksums, publish validation notes and clearly list unresolved issues.
 
 **Completion evidence:** reproducible setup results and a compatibility matrix. Keep releases experimental until broader gameplay evidence supports a different status.

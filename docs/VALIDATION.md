@@ -302,6 +302,21 @@ provides their own supported game image and builds locally.
 
 ## Validation log
 
+### 2026-11-11 — build safety and a normal-speed session
+
+Build safety on current source: `tools/Test-NativeBuildSafety.ps1` passed (an invalid image
+fails with state `failed`, a pre-cancelled build stops as `cancelled`, the installed
+executable unchanged). A full build into a fresh cache, cancelled once compiling had reached
+20%, stopped within 1.1 s with "Build cancelled; the previous executable and saves were
+retained", no build processes left running and the installed executable unchanged.
+
+Normal speed: five minutes of the scripted first mission at `GCN_TIMESCALE=1`, vsync on,
+scale 2, real audio output, on a Ryzen 9 5900XT with an RTX 4070 SUPER. The session summary
+reported 59.4-59.8 fps with a 17 ms median frame for eight of ten 30-second windows; the first
+(46 fps) and fourth (49 fps) had a few frames over 50 ms while shaders were compiled for the
+first time ("no cache yet"). The clock log shows the audio stream at a steady 32,000 frames
+per guest second with no underrun or stall lines. Not judged: how it sounds.
+
 ### 2026-11-11 — widescreen in flight
 
 The scripted first mission ran at 4:3 and at 16:9, unpaced, with frames sampled from 7,000 to

@@ -4,6 +4,8 @@
   mapping → BIND WITH PAD asks for each control in turn and shows each input as it arrives.
   It uses the game's new windowless `--list-pads` probe. Not yet tried with a physical
   controller; the older detect-and-pick flow is still there.
+- Play time on the Flight Deck now includes sessions started from RecompLauncher, read from
+  the game's own session summary in each log.
 - `VALIDATION.md` and `RELEASE-READINESS.md` moved into `docs/`. rc.5's update installer
   accepts packages laid out this way (checked); older root copies stay in place after an
   update and can be deleted. The unused root `SHA256SUMS.txt` was removed; every package

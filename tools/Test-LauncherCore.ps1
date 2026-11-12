@@ -338,6 +338,28 @@ try {
   Assert-Equal 'C:\Proj\run\s.ram.bin' $envNoMods.GCN_RAM_DUMP 'RAM dump path'
   Assert-Equal 'C:\mods' (Get-NativeSessionEnvironment 'C:\Proj' 'x' 'C:\mods').GCN_MODS_DIR 'mods folder passed'
 
+  # Play time from session logs (sessions started outside the launcher).
+  $normal = @('[session] machine: x','[session] frames, last 30s: 59.5 fps','[session] frames, last 30s: 59.5 fps','[session] session total, over 75.5s: 59.4 fps')
+  Assert-Equal 75.5 (Get-SessionLogSeconds $normal) 'a normal exit uses the session total'
+  Assert-Equal 90.0 (Get-SessionLogSeconds @('[session] frames, last 30s: 1','x','[session] frames, last 30s: 2','[session] frames, last 30s: 3')) 'a crashed run counts its 30-second lines'
+  Assert-Equal 0.0 (Get-SessionLogSeconds @('Desktop controls: ...')) 'a log without session lines counts nothing'
+  $logs = Join-Path $scratch 'logs'; $history = Join-Path $scratch 'play-history'
+  [IO.Directory]::CreateDirectory($logs) | Out-Null; [IO.Directory]::CreateDirectory($history) | Out-Null
+  [IO.File]::WriteAllLines((Join-Path $logs 'native-20261111-100000-000-aaaaaa.log'), [string[]]$normal)
+  [IO.File]::WriteAllLines((Join-Path $logs 'native-20261111-110000-000-bbbbbb.log'), [string[]]@('[session] frames, last 30s: 1'))
+  [IO.File]::WriteAllLines((Join-Path $logs 'native-20261111-120000-000-cccccc.log'), [string[]]@('[session] frames, last 30s: 1'))
+  [IO.File]::WriteAllLines((Join-Path $logs 'native-20261111-090000-000-oldold.log'), [string[]]@('no summary in this old log'))
+  [IO.File]::WriteAllText((Join-Path $history 'native-20261111-110000-000-bbbbbb.json'), '{"version":1,"seconds":500}')
+  Assert-Equal 1 (Sync-PlayHistoryFromSessionLogs $logs $history @('native-20261111-120000-000-cccccc')) 'one record written: tracked, running and empty logs left alone'
+  $rec = Get-Content (Join-Path $history 'native-20261111-100000-000-aaaaaa.json') -Raw | ConvertFrom-Json
+  Assert-Equal 75.5 ([double]$rec.seconds) 'the record holds the session total'
+  Assert-Equal 1 ([int]$rec.version) 'the record uses the tracker format'
+  Assert-Equal 500 ([int](Get-Content (Join-Path $history 'native-20261111-110000-000-bbbbbb.json') -Raw | ConvertFrom-Json).seconds) 'a tracker record is not overwritten'
+  Assert-True (-not (Test-Path (Join-Path $history 'native-20261111-120000-000-cccccc.json'))) 'a running session is skipped'
+  Assert-True (-not (Test-Path (Join-Path $history 'native-20261111-090000-000-oldold.json'))) 'a log without session lines writes no record'
+  Assert-Equal 1 (Sync-PlayHistoryFromSessionLogs $logs $history @()) 'the finished session is recorded once it is no longer running'
+  Assert-Equal 0 (Sync-PlayHistoryFromSessionLogs $logs $history @()) 'nothing is recorded twice'
+
   $mine = [pscustomobject]@{ Path = $exe.ToUpperInvariant() }
   $other = [pscustomobject]@{ Path = (Join-Path $scratch 'elsewhere\assault.exe') }
   $hidden = [pscustomobject]@{ Path = $null }

@@ -383,6 +383,14 @@ function Test-GameImage {
 function Get-PlaytimeText {
   $seconds = 0.0
   $historyDir = Join-Path $script:projectDir 'user-data\play-history'
+  # Sessions started from RecompLauncher have a log but no tracker record; count them from
+  # their [session] lines. A session still running is left until it ends.
+  $skip = @()
+  if (Get-RunningNativeGame) {
+    $newest = Get-ChildItem -LiteralPath (Join-Path $script:nativeRunDir 'logs') -Filter 'native-*.log' -File -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+    if ($newest) { $skip = @([IO.Path]::GetFileNameWithoutExtension($newest.Name)) }
+  }
+  try { [void](Sync-PlayHistoryFromSessionLogs (Join-Path $script:nativeRunDir 'logs') $historyDir $skip) } catch {}
   foreach($file in (Get-ChildItem -LiteralPath $historyDir -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
     try {
       $session=Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json

@@ -114,6 +114,43 @@ function Get-NativeSessionEnvironment([string]$ProjectDir, [string]$RamDumpPath,
   }
 }
 
+# Seconds of play in one session's stdout log, from the game's [session] lines: the total
+# written at a normal exit, or else 30 s for each 30-second line (a killed or crashed run ends
+# at its last one). 0 when the log has neither, such as a run from before those lines existed.
+function Get-SessionLogSeconds([string[]]$Lines) {
+  $periods = 0
+  foreach ($line in @($Lines)) {
+    $m = [regex]::Match([string]$line,'\[session\] session total, over (?<s>[0-9]+(?:\.[0-9]+)?)\s*s')
+    if ($m.Success) { return [double]::Parse($m.Groups['s'].Value,[Globalization.CultureInfo]::InvariantCulture) }
+    if ([string]$line -match '\[session\] frames, last 30s:') { $periods++ }
+  }
+  return [double]($periods * 30)
+}
+
+# Play-history records for sessions that have a log but no record: those started outside the
+# Peregrine Forge launcher (RecompLauncher's --play), which runs no playtime tracker. A record
+# is named after its session (native-<stamp>-<id>), as the launcher's tracker names its own,
+# so no session is counted twice. Logs named in $Skip (a session still running) are left for
+# later. Returns how many records were written.
+function Sync-PlayHistoryFromSessionLogs([string]$LogsDir, [string]$HistoryDir, [string[]]$Skip = @()) {
+  $written = 0
+  foreach ($log in @(Get-ChildItem -LiteralPath $LogsDir -Filter 'native-*.log' -File -ErrorAction SilentlyContinue)) {
+    $name = [IO.Path]::GetFileNameWithoutExtension($log.Name)
+    if ($Skip -contains $name) { continue }
+    $record = Join-Path $HistoryDir ($name + '.json')
+    if (Test-Path -LiteralPath $record) { continue }
+    try {
+      $seconds = Get-SessionLogSeconds ([IO.File]::ReadAllLines($log.FullName))
+      if ($seconds -le 0) { continue }
+      [IO.Directory]::CreateDirectory($HistoryDir) | Out-Null
+      $json = [ordered]@{ version = 1; seconds = [Math]::Round($seconds,2); finished = $true; source = 'session log'; updatedUtc = $log.LastWriteTimeUtc.ToString('o') } | ConvertTo-Json
+      [IO.File]::WriteAllText($record,$json,(New-Object Text.UTF8Encoding($false)))
+      $written++
+    } catch {}
+  }
+  return $written
+}
+
 # Only this project's assault.exe counts; an unrelated program with the same name must not
 # block launches. A process whose path cannot be read (for example one running elevated) is
 # still treated as running, so saves and asset packs are never changed under a live game.
