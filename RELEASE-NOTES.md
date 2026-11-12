@@ -1,4 +1,13 @@
-# Unreleased — 2026-11-11 after rc.5
+# 0.2.0-rc.6 - Windows x64 source-build release candidate
+
+Experimental prerelease, not a stable full-game release. Adds one-press controller binding
+and counts RecompLauncher sessions in play time; the gameplay fixes and known issues are
+rc.5's (below). Updating from rc.5 with Install Local ZIP works; from rc.4 or earlier, extract
+rc.6 into a fresh folder and copy your old `user-data` folder into it.
+
+<!-- rc6-checks -->
+
+## 2026-11-11 after rc.5
 
 - **Bind a controller with one press per control:** Systems & Controls → Create / Edit
   mapping → BIND WITH PAD asks for each control in turn and shows each input as it arrives.

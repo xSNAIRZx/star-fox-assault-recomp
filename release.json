@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "version": "0.2.0-rc.5",
-  "releaseId": "20261111-213000",
+  "version": "0.2.0-rc.6",
+  "releaseId": "20261112-001500",
   "releaseChannel": "experimental-source",
   "targetPlatform": "Windows x64",
   "packageKind": "source-and-host-tools",
@@ -16,5 +16,5 @@
     "sha256": "3ec820f8644f1fa5336313501cc9f0eee87b768d874ea603f51100ec88934fb4"
   },
   "payloadIntegrityManifest": "SHA256SUMS.txt",
-  "sha256Sidecar": "Star-Fox-Assault-Recomp-v0.2.0-rc.5-Windows-x64-20261111-213000.zip.sha256"
+  "sha256Sidecar": "Star-Fox-Assault-Recomp-v0.2.0-rc.6-Windows-x64-20261112-001500.zip.sha256"
 }

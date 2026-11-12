@@ -1,6 +1,6 @@
 # Planned updates
 
-Planning baseline: **3 November 2026** · Current experimental release: **0.2.0-rc.5**
+Planning baseline: **3 November 2026** · Current experimental release: **0.2.0-rc.6**
 
 The aim is a dependable Windows launcher that builds locally from the user's own USA GF7E01 ISO/CISO, with clear setup, a sharp picture and consistent controls. The stages below describe planned work. They are not promises of delivery dates or claims that the game is fully compatible.
 

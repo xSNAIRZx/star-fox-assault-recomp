@@ -1,10 +1,12 @@
 # Release decision: experimental prerelease only
 
-**2026-11-11: 0.2.0-rc.5 is published as an experimental prerelease; a gameplay release
-stays blocked.** rc.5 fixes the one gameplay crash that could be reproduced here: the
+**2026-11-12: 0.2.0-rc.6 is published as an experimental prerelease; a gameplay release
+stays blocked.** rc.6 adds one-press controller binding (not yet tried with a physical
+controller) to rc.5, which fixed the one gameplay crash that could be reproduced here: the
 native build crashed on a mission's third load (after retrying it twice). The fix was
 checked over five and then eight mission loads in scripted runs, the second from a fresh
-empty-cache build of the rc.5 package (see `VALIDATION.md`, "rc.5 package checks").
+empty-cache build of the rc.5 package (see `VALIDATION.md`, "rc.5 package checks"; rc.6 was
+checked the same way, "rc.6 package checks").
 
 Still open, and why each needs a person or hardware rather than more scripted runs:
 
@@ -17,7 +19,7 @@ Still open, and why each needs a person or hardware rather than more scripted ru
   display scaling, and the launcher window's own Import & Build on a second PC.**
 
 The 2026-11-04 notes below describe earlier candidates; their digests and smoke results do
-not certify rc.5.
+not certify rc.6.
 
 Assessed 2026-11-03 against source baseline
 `d46e231a2494d201923b08898f52cf9753abb030` plus the host CI changes accompanying
@@ -113,7 +115,7 @@ checklist; do not invent an approval or claim its dynamic form has been validate
   thread-pointer failures remain; full-game compatibility is unverified.
 - Pictures: `docs/images/launcher-home.png`, `launcher-settings.png`, `project-cover.png`.
   Label artwork as launcher concept artwork; it is not gameplay evidence.
-- Download: hold pending final candidate validation. Do not present rc.5 (or any
+- Download: hold pending final candidate validation. Do not present rc.6 (or any
   earlier candidate) as gameplay-validated.
 
 The project's release standard is stricter than the public site's short intake
