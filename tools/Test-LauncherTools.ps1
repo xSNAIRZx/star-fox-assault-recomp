@@ -37,7 +37,7 @@ $shippedTrees = @('tools','runtime','recomp','assets','decomp/config/GF7E01','th
 # Added one file at a time, or produced by packaging itself.
 $shippedFiles = @('Launch-StarFoxAssault.ps1','Start-StarFoxAssault.cmd','Star Fox Assault Recomp.exe',
   'CMakeLists.txt','LICENSE','THIRD_PARTY_NOTICES.md','CREDITS.md','RELEASE-NOTES.md','portable.txt',
-  'README-PROTOTYPE.txt','VALIDATION.md','release.json','SHA256SUMS.txt')
+  'README-PROTOTYPE.txt','docs/VALIDATION.md','release.json','SHA256SUMS.txt')
 # The launcher creates these itself.
 $runtimePaths = @('build-desktop','user-data')
 

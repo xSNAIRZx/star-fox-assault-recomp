@@ -2,7 +2,7 @@
 
 <a href="https://recomplauncher.com"><picture><source media="(prefers-color-scheme: dark)" srcset="https://recomplauncher.com/assets/press/launcher/badge-light.svg"><img alt="Get it on RecompLauncher" src="https://recomplauncher.com/assets/press/launcher/badge-dark.svg" height="48"></picture></a>
 
-**Release gate:** see [RELEASE-READINESS.md](RELEASE-READINESS.md) for current build/test evidence,
+**Release gate:** see [docs/RELEASE-READINESS.md](docs/RELEASE-READINESS.md) for current build/test evidence,
 reproduction commands, distribution boundaries and the unresolved gameplay blockers.
 
 **Launcher brand: Peregrine Forge.** The game title identifies this independent fan project; Peregrine Forge is the launcher name.
@@ -91,4 +91,4 @@ Project-authored software source and integration code are available under the to
 
 The native runtime/recompiler derives from the MIT-licensed [gcn-recomp](https://github.com/ethannicholas/gcn-recomp). Analysis metadata uses the CC0 [decomp-toolkit template](https://github.com/encounter/dtk-template). See `CREDITS.md`, `THIRD_PARTY_NOTICES.md` and the component license files for attribution. This independent fan project is not affiliated with Nintendo, Namco or Foxhollow and contains no Foxhollow code or artwork.
 
-`VALIDATION.md` records bounded tests and known limits. Startup checks and launcher screenshots do not establish full-game compatibility. `tools/Package-Prototype.ps1` produces a source-only ZIP by default, verifies its payload hashes and checks its scripts before delivery.
+`docs/VALIDATION.md` records bounded tests and known limits. Startup checks and launcher screenshots do not establish full-game compatibility. `tools/Package-Prototype.ps1` produces a source-only ZIP by default, verifies its payload hashes and checks its scripts before delivery.

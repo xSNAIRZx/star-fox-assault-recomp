@@ -344,3 +344,82 @@ function New-BuildFailureReport([hashtable]$failure, [hashtable]$replacements) {
   foreach ($l in @($failure.Tail)) { $lines.Add('  ' + $l) }
   return Protect-ReportText ($lines -join "`r`n") $replacements
 }
+
+# --- One-press controller binding --------------------------------------------------------
+# The mapping dialog runs the game's `--list-pads` probe (controllers only, no window) and
+# asks for one control at a time; each new input the probe prints is bound to the control
+# being asked for. These functions hold that logic so it can be tested without a controller.
+
+# The controls asked for, in order, with the prompt shown for each. Buttons first, then the
+# D-pad, then each stick direction (bound one direction at a time, which also covers a stick
+# whose axis runs the other way).
+function Get-PadBindingSteps {
+  $steps = @(
+    @('A','the A button'), @('B','the B button'), @('X','the X button'), @('Y','the Y button'),
+    @('Z','the Z button'), @('L','the L trigger'), @('R','the R trigger'), @('start','START'),
+    @('dpad_up','D-pad up'), @('dpad_down','D-pad down'), @('dpad_left','D-pad left'), @('dpad_right','D-pad right'),
+    @('stick_up','the main stick up'), @('stick_down','the main stick down'),
+    @('stick_left','the main stick left'), @('stick_right','the main stick right'),
+    @('cstick_up','the C-stick up'), @('cstick_down','the C-stick down'),
+    @('cstick_left','the C-stick left'), @('cstick_right','the C-stick right')
+  )
+  foreach ($s in $steps) {
+    $verb = if ($s[0] -like '*stick_*') { 'Push' } else { 'Press' }
+    [pscustomobject]@{ Target = $s[0]; Prompt = ('{0} {1}' -f $verb,$s[1]) }
+  }
+}
+
+# One line of probe output: the binding source to put after "<control> =" in controls.txt, or
+# $null for anything else (device announcements, removals, blank lines). An axis keeps its
+# direction (axis 2+ / axis 2-); the probe's explanatory comment is dropped.
+function ConvertFrom-PadProbeLine([string]$line) {
+  if ([string]::IsNullOrWhiteSpace($line)) { return $null }
+  $m = [regex]::Match($line.Trim(),'^(?<device>"[^"]+")\s+(?<binding>button\s+\d+|hat\s+\d+\s+(?:up|down|left|right)|axis\s+\d+(?:[+-])?(?:\s+invert)?)\s*(?:\(.*)?$')
+  if (-not $m.Success) { return $null }
+  return ('{0} {1}' -f $m.Groups['device'].Value,($m.Groups['binding'].Value -replace '\s+',' '))
+}
+
+# A fresh wizard: the step being asked for and what has been bound so far.
+function New-PadBindingState { [pscustomobject]@{ Index = 0; Bound = [ordered]@{}; Message = '' } }
+
+# Applies one probe line to the wizard and returns the state. A new source is bound to the
+# control being asked for and the wizard moves on. A source already bound to another
+# control is not reused (a double press, or the player pressing the wrong control) and the
+# message says which control has it; the step stays.
+function Step-PadBinding($state, [string]$line) {
+  $steps = @(Get-PadBindingSteps)
+  if ($state.Index -ge $steps.Count) { return $state }
+  $source = ConvertFrom-PadProbeLine $line
+  if (-not $source) { return $state }
+  foreach ($key in @($state.Bound.Keys)) {
+    if ($state.Bound[$key] -ceq $source) {
+      $state.Message = ('{0} is already used for {1}. Press another control, or Skip.' -f $source,$key)
+      return $state
+    }
+  }
+  $target = $steps[$state.Index].Target
+  $state.Bound[$target] = $source
+  $state.Message = ('{0} = {1}' -f $target,$source)
+  $state.Index++
+  return $state
+}
+
+# Moves past the control being asked for without binding it.
+function Skip-PadBinding($state) {
+  $steps = @(Get-PadBindingSteps)
+  if ($state.Index -lt $steps.Count) { $state.Message = ('{0} skipped' -f $steps[$state.Index].Target); $state.Index++ }
+  return $state
+}
+
+# The mapping list after the wizard: every existing line for a control the wizard bound is
+# replaced by the new binding; all other lines are kept in their order.
+function Merge-PadBindings([string[]]$existing, $bound) {
+  $out = New-Object System.Collections.Generic.List[string]
+  foreach ($line in @($existing)) {
+    $m = [regex]::Match([string]$line,'^\s*(?<target>[A-Za-z0-9_]+)\s*=')
+    if ($m.Success -and $bound.Contains($m.Groups['target'].Value)) { continue }
+    $out.Add([string]$line)
+  }
+  foreach ($key in $bound.Keys) { $out.Add(('{0} = {1}' -f $key,$bound[$key])) }
+  return $out.ToArray()
+}

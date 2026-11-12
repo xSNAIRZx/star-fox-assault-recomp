@@ -14,7 +14,7 @@ deadzone and controller mapping.
 - Normal launcher-started native sessions write guest-clock and frame pacing diagnostics to their session error log to help separate simulation speed from rendering speed.
 - First-mission flight, menus and profile persistence have been tested. Full mission completion and later missions remain unverified. The disappearing first boss and current-thread-pointer crash are open issues.
 
-See [VALIDATION.md](VALIDATION.md) for the evidence and its limits.
+See [docs/VALIDATION.md](docs/VALIDATION.md) for the evidence and its limits.
 
 ## 1. Stabilize the first mission
 
@@ -37,9 +37,9 @@ them using the `[ram] frame ... (presented ...)` line rather than assuming equal
       failure, and identify the store that writes the invalid word. A 60,000-frame unpaced diagnostic run
       (2026-11-05, with `GCN_THREAD_WATCH_BAD=1`) did not reproduce it.
 - [x] Explain the module-reload fault from the same run: module 12 callbacks still ran after another module
-      was linked over its `.bss` (VALIDATION.md, 2026-11-05). Fixed 2026-11-11: a module linked again at an
+      was linked over its `.bss` (docs/VALIDATION.md, 2026-11-05). Fixed 2026-11-11: a module linked again at an
       earlier copy's header kept the earlier section bases; the runtime now re-reads them. Checked over five
-      mission loads (VALIDATION.md, 2026-11-11).
+      mission loads (docs/VALIDATION.md, 2026-11-11).
 - [ ] Complete the first mission at normal speed, including the boss, transition and save/reload, without the reported failures.
 
 **Evidence so far:** the saved trace resolves to `0x80136C60` inside `fn_80136C44`, with the
@@ -54,7 +54,7 @@ carries the live guest stack under it.
 
 ## 2. Improve graphics confidence
 
-- [ ] Compare original 4:3 and experimental 16:9 in flight, on foot, during the boss encounter and in menus.
+- [ ] Compare original 4:3 and experimental 16:9 in flight, on foot, during the boss encounter and in menus. In flight, checked 2026-11-11: the 16:9 output shows extra width at the sides with the HUD kept at 4:3 proportions in the centre and no edge pop-in in the sampled frames (docs/VALIDATION.md). On foot, the boss and menus are not checked.
 - [ ] Resolve game-specific widescreen visibility and composition problems; check HUD proportions and stretched elements.
 - [ ] Check supported internal resolutions, FXAA, Sharp/Smooth filtering, fullscreen and VSync on more than one GPU.
 - [ ] Document practical presets with honest image-quality and performance tradeoffs.

@@ -71,7 +71,9 @@ The game project provides:
   `cpu.cpp`, `threads.cpp` and `hle_os.cpp` are the CPU and OS; `hw/` the hardware
   registers; `gx/` the graphics pipeline; `main.cpp` the SDL frontend and `bench_main.cpp`
   the benchmark. `input_map.*` binds any joystick or key to the pad from a `controls.txt`
-  (wheels, pedals, button boxes), and its `--list-controls` prints what to write for each;
+  (wheels, pedals, button boxes), and its `--list-controls` prints what to write for each
+  (`--list-pads` does the same for controllers only, with no window, for a front end's
+  one-press binding dialog);
   `ffb.*` is the wheel's force feedback, from the game's `telemetry::Motion` and the pad's
   rumble motor.
 - `openxr/`: the OpenXR frontend (the game on a theater panel or in stereo, the headset's

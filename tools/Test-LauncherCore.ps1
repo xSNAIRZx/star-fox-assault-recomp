@@ -205,6 +205,43 @@ $summary = New-CrashReportSummary @{ Version = '0.2.0-test'; OsVersion = 'Window
 Assert-True ($summary -match 'Flagged line: \[vertcheck\] %USERPROFILE%\\x') 'bundle summary names the flag, redacted'
 Assert-True ($summary -notmatch 'D:\\Home\\Pat') 'bundle summary has no profile path'
 
+# --- One-press controller binding ---
+$steps = @(Get-PadBindingSteps)
+Assert-Equal 20 $steps.Count 'twenty controls asked for'
+Assert-Equal 'A' $steps[0].Target 'A first'
+Assert-Equal 'Press the A button' $steps[0].Prompt 'button prompt'
+Assert-Equal 'Push the main stick up' ($steps | Where-Object Target -eq 'stick_up').Prompt 'stick prompt'
+Assert-Equal '"Xbox Controller" button 0' (ConvertFrom-PadProbeLine '"Xbox Controller" button 0') 'button line'
+Assert-Equal '"Pad" hat 0 up' (ConvertFrom-PadProbeLine '  "Pad" hat 0  up ') 'hat line, spacing normalised'
+Assert-Equal '"Pad" axis 1-' (ConvertFrom-PadProbeLine '"Pad" axis 1-            (this direction alone; "axis 1" for both, as a stick or wheel)') 'axis line keeps its direction, drops the comment'
+Assert-Equal '"Wheel" axis 2 invert' (ConvertFrom-PadProbeLine '"Wheel" axis 2 invert      (rests high: a pedal or lever)') 'inverted lever'
+Assert-Equal $null (ConvertFrom-PadProbeLine 'device "Pad": 6 axes, 11 buttons, 1 hats') 'device line ignored'
+Assert-Equal $null (ConvertFrom-PadProbeLine 'device "Pad" removed') 'removal ignored'
+Assert-Equal $null (ConvertFrom-PadProbeLine 'key Space') 'keyboard not bound by the pad wizard'
+Assert-Equal $null (ConvertFrom-PadProbeLine '') 'blank ignored'
+$wiz = New-PadBindingState
+$wiz = Step-PadBinding $wiz 'device "Pad": 6 axes, 11 buttons, 1 hats'
+Assert-Equal 0 $wiz.Index 'a device line does not advance'
+$wiz = Step-PadBinding $wiz '"Pad" button 0'
+Assert-Equal 1 $wiz.Index 'a button binds A and advances'
+Assert-Equal '"Pad" button 0' $wiz.Bound['A'] 'A bound'
+$wiz = Step-PadBinding $wiz '"Pad" button 0'
+Assert-Equal 1 $wiz.Index 'the same button again does not bind B'
+Assert-True ($wiz.Message -match 'already used for A') 'and says which control has it'
+$wiz = Skip-PadBinding $wiz
+Assert-Equal 2 $wiz.Index 'skip moves on'
+Assert-True (-not $wiz.Bound.Contains('B')) 'a skipped control is not bound'
+for ($i = 0; $i -lt 30; $i++) { $wiz = Step-PadBinding $wiz ('"Pad" button {0}' -f ($i + 1)) }
+Assert-Equal 20 $wiz.Index 'the wizard stops at the last control'
+Assert-Equal 19 $wiz.Bound.Count 'nineteen bound, one skipped'
+Assert-Equal '"Pad" button 18' $wiz.Bound['cstick_right'] 'the last control gets the last new input'
+$merged = @(Merge-PadBindings @('# my pads','A = key Space','B = "Old" button 9','stick_x = "Old" axis 0') $wiz.Bound)
+Assert-Equal '# my pads' $merged[0] 'comments kept'
+Assert-True ($merged -contains 'B = "Old" button 9') 'a control the wizard skipped keeps its old binding'
+Assert-True (-not ($merged -contains 'A = key Space')) 'a rebound control loses its old line'
+Assert-True ($merged -contains 'A = "Pad" button 0') 'the new binding is added'
+Assert-True ($merged -contains 'stick_x = "Old" axis 0') 'an axis mapping the wizard did not touch is kept'
+
 # --- Launcher modules stay readable by Windows PowerShell 5.1 ---
 # A script without a BOM is read in the ANSI code page there, so any non-ASCII byte in one
 # shows up garbled in the window. Use a BOM or build the character from its code point.

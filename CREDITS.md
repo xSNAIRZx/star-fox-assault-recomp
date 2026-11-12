@@ -15,4 +15,4 @@ The original Star Fox: Assault game was published by Nintendo and developed by N
 
 The optional first-build tool download uses pinned LLVM-MinGW, CMake, Ninja and Python releases from their official publishers. Their licenses remain with the downloaded distributions in the local tool cache. See `tools/portable-toolchain.json` for exact versions, source URLs and SHA-256 values.
 
-Compatibility remains experimental. The first-boss visibility report and invalid-current-thread-pointer crash are still being investigated. See `RELEASE-NOTES.md` and `VALIDATION.md`.
+Compatibility remains experimental. A crash on a mission's third load is fixed; the first-boss visibility fix still needs live confirmation and the reported current-thread-pointer crash has not reproduced in testing. See `RELEASE-NOTES.md` and `docs/VALIDATION.md`.

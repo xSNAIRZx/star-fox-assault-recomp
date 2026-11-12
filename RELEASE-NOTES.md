@@ -1,3 +1,14 @@
+# Unreleased — 2026-11-11 after rc.5
+
+- **Bind a controller with one press per control:** Systems & Controls → Create / Edit
+  mapping → BIND WITH PAD asks for each control in turn and shows each input as it arrives.
+  It uses the game's new windowless `--list-pads` probe. Not yet tried with a physical
+  controller; the older detect-and-pick flow is still there.
+- `VALIDATION.md` and `RELEASE-READINESS.md` moved into `docs/`. rc.5's update installer
+  accepts packages laid out this way (checked); older root copies stay in place after an
+  update and can be deleted. The unused root `SHA256SUMS.txt` was removed; every package
+  still carries its own.
+
 # 0.2.0-rc.5 - Windows x64 source-build release candidate
 
 Experimental prerelease, not a stable full-game release. The headline is a crash fix: the

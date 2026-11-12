@@ -1,6 +1,6 @@
 # Launcher improvement goals
 
-Status as of 2026-11-05. Working list for the Peregrine Forge launcher (`Launch-StarFoxAssault.ps1` and its tools). Gameplay blockers (first-boss visibility, current-thread pointer) are tracked in [ROADMAP.md](../ROADMAP.md) and [VALIDATION.md](../VALIDATION.md), not here. Follow [AGENTS.md](../AGENTS.md) for publishing rules.
+Status as of 2026-11-05. Working list for the Peregrine Forge launcher (`Launch-StarFoxAssault.ps1` and its tools). Gameplay blockers (first-boss visibility, current-thread pointer) are tracked in [ROADMAP.md](../ROADMAP.md) and [VALIDATION.md](VALIDATION.md), not here. Follow [AGENTS.md](../AGENTS.md) for publishing rules.
 
 Tick items here as they land, in the same PR as the change.
 
@@ -41,7 +41,7 @@ Main weak spots: every control is placed with absolute coordinates (now in 96-DP
 - [x] Pre-flight check before Import & Build: free disk (blocks under 3 GB, as the build worker would fail), writable folder, download-host reachability when tools are not cached, path-length warning when Windows long paths are off.
 - [x] Readable build failures: show the failing stage and first errors from the worker's `stdout.log`/`stderr.log`, with Open log, Copy report (paths redacted) and Open job folder buttons.
 - [x] Show elapsed time per phase and MB downloaded in the build dialog.
-- [ ] One-click controller binding ("press the button for A now") with a live test view, replacing detect → close → reload.
+- [x] One-click controller binding ("press the button for A now") with a live test view, replacing detect → close → reload. Done 2026-11-11: BIND WITH PAD in the mapping dialog runs the game's new windowless `--list-pads` probe and asks for the 20 controls in turn (buttons, D-pad, each stick direction), showing every input as it arrives; a control already used is refused, Skip and USE THESE finish early, and the result replaces only the lines for the controls bound. The binding logic is unit-tested (Step-PadBinding and friends in LauncherCore.ps1); the dialog was opened, skipped through and cancelled in the real window, with its probe stopped on close. Not yet tried with a physical controller.
 - [ ] Visually verify every page at 100%, 125% and 150% scaling and at 1180×720. Done at 125% for the default window and 1180×720 (2026-11-05); 100% and 150% are still unchecked.
 - [x] Fall back to Segoe UI Semibold when Bahnschrift is not installed.
 - [x] Keyboard and controller navigation: focus cues on every button, Ctrl+PageUp/PageDown (or Ctrl+Tab) and Ctrl+1-7 for pages, Enter/Esc on dialogs, XInput pad (D-pad/stick moves focus, A presses, B back, LB/RB pages). Pad not yet tried with a physical controller.
@@ -60,14 +60,14 @@ Main weak spots: every control is placed with absolute coordinates (now in 96-DP
 
 ## Tier 4 — Distribution, trust and release
 
-- [x] Publish rc.4: package current source, run the full checks against that exact ZIP, publish with its digest. Per [RELEASE-READINESS.md](../RELEASE-READINESS.md), rc.2/rc.3 evidence cannot certify it. Published 2026-11-05 as an experimental prerelease; package and update checks ran against the exact ZIP, the launcher UI walkthrough did not.
+- [x] Publish rc.4: package current source, run the full checks against that exact ZIP, publish with its digest. Per [RELEASE-READINESS.md](RELEASE-READINESS.md), rc.2/rc.3 evidence cannot certify it. Published 2026-11-05 as an experimental prerelease; package and update checks ran against the exact ZIP, the launcher UI walkthrough did not.
 - [ ] Run the launcher UI end to end on a clean Windows machine or Windows Sandbox (Windows Sandbox needs Windows Pro; this PC has Home). Partial, 2026-11-11: the rc.5 candidate built from a fresh extract with an empty cache through the exe's `--prepare` mode, and the result ran eight mission loads (VALIDATION.md); the window's own buttons were not used: Import & Build, Play Native, cancel, update, rollback, save restore (readiness gate 3).
 - [x] Keep CI-built launcher, inspector and package with SHA-256 as a workflow artifact.
 - [x] Stop committing `Star Fox Assault Recomp.exe`: attach the CI-built exe to releases instead. The package and updater required-file lists name it at the repo root, so change them together. Done 2026-11-07: it is ignored by Git, `tools/Package-Prototype.ps1` builds it from `tools/LauncherBootstrap.cs` before staging, so packages still ship it at the root (both required-file lists unchanged), and CI keeps the built exe as a workflow artifact. The tool audit checks the bootstrap source instead of the exe.
 - [ ] Authenticate updates: sign `release.json` (minisign or a code-signing certificate) and verify before installing a local ZIP.
 - [x] Fix the old-updater dead end (older updaters reject new doc paths): skip unknown docs instead of failing, or show a one-time migration note. This installer now skips unknown documentation (still hash-checked) and accepts `docs/`; installers already shipped keep the old rule, so layout changes wait until rc.4 ships it.
 - [x] Add a GitHub bug-report form with the roadmap's fields.
-- [ ] Tidy the repo root: move `README-PROTOTYPE.txt`, `RELEASE-READINESS.md` and `VALIDATION.md` under `docs/`, updating the package and updater allowlists. Staged because the installers already shipped decide what an update may contain: rc.2-rc.4 require `VALIDATION.md` and `README-PROTOTYPE.txt` at the root, and rc.2/rc.3 reject any `docs/` path. Step 1 (2026-11-07): this installer accepts `VALIDATION.md` at either place. Step 2, after a release ships that installer: move `VALIDATION.md` and `RELEASE-READINESS.md`, and update the package document list and links. Keep `README-PROTOTYPE.txt` at the root (it is the first file a player opens after extracting). An update does not delete the old root copies.
+- [x] Tidy the repo root: `VALIDATION.md` and `RELEASE-READINESS.md` moved to `docs/` (2026-11-11), after rc.5 shipped an installer that accepts `docs/VALIDATION.md` in place of the root copy; checked by installing a package with the new layout using rc.5's own installer. The stale, unused root `SHA256SUMS.txt` source manifest was removed (packages generate their own). `README-PROTOTYPE.txt` stays at the root as the first file a player opens. An update does not delete the old root copies.
 - [x] Record a pinned upstream source for the replacement font bytes in `THIRD_PARTY_NOTICES.md`. Done 2026-11-11: both files are byte-identical to dolphin-emu/dolphin `Data/Sys/GC` at commit `0f1ce0e1f42a`, with their SHA-256 recorded.
 
 ## Suggested order

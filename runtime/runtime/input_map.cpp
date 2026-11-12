@@ -450,17 +450,19 @@ std::string quoted_key(SDL_Scancode sc) {
 
 }  // namespace
 
-int input_map_probe() {
+int input_map_probe(bool with_window) {
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC) != 0) {
+    if (SDL_Init((with_window ? SDL_INIT_VIDEO : 0) | SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC) != 0) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
     // A window, for the keyboard: keys reach only a focused window. Joysticks are read
     // whether or not it has focus.
-    SDL_Window* win = SDL_CreateWindow("Press or move a control (Escape quits)", SDL_WINDOWPOS_CENTERED,
-                                       SDL_WINDOWPOS_CENTERED, 560, 120, 0);
-    printf("Press a key or a button, or move an axis well away from where it rests, and the\n"
+    // Without one (--list-pads) only controllers are read; the caller ends the process.
+    SDL_Window* win = with_window ? SDL_CreateWindow("Press or move a control (Escape quits)", SDL_WINDOWPOS_CENTERED,
+                                                     SDL_WINDOWPOS_CENTERED, 560, 120, 0)
+                                  : nullptr;
+    if (with_window) printf("Press a key or a button, or move an axis well away from where it rests, and the\n"
            "source to bind it with is printed: put it after \"<pad control> =\" in controls.txt.\n"
            "Escape, with this window in front, or closing it quits.\n\n");
     fflush(stdout);

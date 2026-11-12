@@ -127,7 +127,7 @@ reported separately from local results.
 ## Windows gameplay capture tooling - 2026-11-03
 
 Added `tools/Capture-Gameplay.ps1`, its ISO-free synthetic-process tests, and
-[the Windows capture guide](runtime/docs/gameplay-capture.md). No gameplay behavior
+[the Windows capture guide](../runtime/docs/gameplay-capture.md). No gameplay behavior
 was changed and neither reported defect was reproduced or fixed.
 
 - Windows PowerShell 5.1 synthetic-process checks passed: Unicode/space/apostrophe
@@ -301,6 +301,32 @@ prebuilt game executables, local settings, saves and build caches. Each recipien
 provides their own supported game image and builds locally.
 
 ## Validation log
+
+### 2026-11-11 — widescreen in flight
+
+The scripted first mission ran at 4:3 and at 16:9, unpaced, with frames sampled from 7,000 to
+14,000. In the presented 16:9 output (`GCN_DUMP_OUTPUT=1`, 1600x900) the scene fills the
+frame with extra width at both sides, round objects stay round, and the HUD -- dialogue box,
+BOMB gauge, lives, score -- keeps its 4:3 proportions inside the central 4:3 area. No objects
+popped in at the edges in the sampled frames. The game's own framebuffer dumps (640x448) show
+the HUD stretched, because they are taken before the output's 4:3 correction for 2D draws;
+that is a capture artifact, not what the player sees. Not checked: on-foot sections, the boss
+encounter and menus in 16:9.
+
+### 2026-11-11 — trying to reach the first boss with scripted input
+
+The scripted input loses every life well before the Winged Aparoid, so the boss fix could not
+be checked without a player. RAM dumps every 1,000 frames, matched to the HUD's lives counter
+(4, 3, 2, 1, then 2 after a pickup, 1, 0), found three bytes that follow it exactly:
+`802A2B75` and `802A2D20` in static data and `80D49254` in the heap. Holding all three at 9
+with the new runtime diagnostic `GCN_POKE` kept the HUD at 09 and the mission from ending
+over 188,000 frames. The run still did not advance: each death respawns at a checkpoint, and
+this stretch of the mission ends when its targets (Oikonny's flagship) are destroyed, which
+blind fire-and-weave input never does. `802A2B7C` (16-bit) reads 1,200 after each respawn and
+falls before each death, but holding it did not stop the HUD shield from draining, so it is
+not the shield the game uses. Result: reaching the boss needs aimed play; the boss fix still
+needs a player's confirmation. `GCN_POKE` changes what the game does and is for diagnosis
+only.
 
 ### 2026-11-11 — rc.5 candidate: empty-cache build and fresh-install run
 

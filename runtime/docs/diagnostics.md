@@ -518,6 +518,12 @@ so the variants never mix with the real ones).
   dumps carry, so a dump can be matched to what was on screen. The dump is physical RAM: a
   game that maps memory through its page tables has its paged variables wherever their
   pages happen to be, and its page table (in the dump too) says which virtual page each is.
+- `GCN_POKE=ADDR=VALUE[:BITS],...` writes those values (hex address; decimal or `0x` value;
+  8, 16 or 32 bits, default 8) into guest memory at the end of every submitted frame, from the
+  guest thread: for holding a counter (lives, a timer) that would otherwise end a scripted run
+  before it reaches what is being checked. Find the address with `GCN_RAM_DUMP_AT` first. It
+  changes what the game does, says so on stderr (`[poke] holding ...`), and is for diagnosis
+  only; the addresses belong in the game project's notes, not here.
 - `GCN_TOKLOG=1` prints every PE token as it is signalled, and every draw-done (finish)
   as it is raised and acknowledged, with a note when one is raised while the last is
   still pending.

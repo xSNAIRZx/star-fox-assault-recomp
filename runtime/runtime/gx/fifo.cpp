@@ -92,6 +92,39 @@ static void ram_dump_frame(uint32_t frame) {
     }
 }
 
+// GCN_POKE=ADDR=VALUE[:BITS],... writes those values (hex address, decimal or 0x value, 8, 16
+// or 32 bits, default 8) into guest memory at the end of every submitted frame, from the guest
+// thread. For holding a variable while testing -- a counter that would otherwise end a
+// scripted run before it reaches what is being checked. It changes what the game does, so it
+// is for diagnosis only, and every session that uses it says so on stderr.
+static void poke_frame() {
+    struct Poke { uint32_t addr, value, bits; };
+    static const std::vector<Poke> pokes = [] {
+        std::vector<Poke> v;
+        const char* e = getenv("GCN_POKE");
+        if (!e || !*e) return v;
+        for (const char* p = e; *p;) {
+            char* end;
+            Poke k{(uint32_t)strtoul(p, &end, 16), 0, 8};
+            if (*end == '=') {
+                k.value = (uint32_t)strtoul(end + 1, &end, 0);
+                if (*end == ':') k.bits = (uint32_t)strtoul(end + 1, &end, 10);
+                if (k.bits == 8 || k.bits == 16 || k.bits == 32) v.push_back(k);
+            }
+            while (*end && *end != ',') end++;
+            p = *end ? end + 1 : end;
+        }
+        for (const Poke& k : v)
+            fprintf(stderr, "[poke] holding %08X = %u (%u-bit) every frame: diagnostic, changes the game\n", k.addr, k.value, k.bits);
+        return v;
+    }();
+    for (const Poke& k : pokes) {
+        if (k.bits == 8) mem_w8(k.addr, (uint8_t)k.value);
+        else if (k.bits == 16) mem_w16(k.addr, (uint16_t)k.value);
+        else mem_w32(k.addr, k.value);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The front end on its own thread.
 //
@@ -396,6 +429,7 @@ static void skim_sync(gx::SkimSync kind, uint32_t value, std::vector<uint8_t>&) 
         debug_guest_check("frame");
         heap_trace_frame(gx::g_frames_submitted.load());
         ram_dump_frame(gx::g_frames_submitted.load());
+        poke_frame();
         if (g_guest_frame_hook) g_guest_frame_hook(gx::g_frames_submitted.load());
         break;
     }

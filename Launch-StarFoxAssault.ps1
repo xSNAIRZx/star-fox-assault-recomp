@@ -779,6 +779,108 @@ function Get-DetectedControllerSources {
   return @($found | Sort-Object)
 }
 
+# One-press binding: runs the game's `--list-pads` probe (controllers only, no window) in the
+# background and asks for one control at a time; each new input it reports is bound to that
+# control (Step-PadBinding in LauncherCore.ps1). The line under the prompt shows every input as
+# it arrives, so the dialog doubles as a test view. Returns the bindings, or $null if cancelled.
+function Open-PadBindingWizard {
+  if (-not (Test-Path -LiteralPath $script:nativePath -PathType Leaf)) {
+    [Windows.Forms.MessageBox]::Show('Build the native game first: the controller check uses it.','Controller binding','OK','Information') | Out-Null
+    return $null
+  }
+  [IO.Directory]::CreateDirectory($script:controllerLogDir) | Out-Null
+  [IO.Directory]::CreateDirectory($script:nativeRunDir) | Out-Null
+  $logPath = Join-Path $script:controllerLogDir ('pads-{0}.txt' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+  $steps = @(Get-PadBindingSteps)
+  $state = New-PadBindingState
+  $result = @{ Bound = $null }
+
+  $dialog = New-Object Windows.Forms.Form
+  $dialog.Text = 'Bind with your controller'
+  $dialog.StartPosition = 'CenterParent'
+  $dialog.ClientSize = New-Object Drawing.Size(640,330)
+  $dialog.FormBorderStyle = 'FixedDialog'; $dialog.MaximizeBox = $false; $dialog.MinimizeBox = $false
+  $dialog.BackColor = $script:colors.base; $dialog.ForeColor = $script:colors.text
+  $dialog.Font = New-Object Drawing.Font('Segoe UI',10); $dialog.AutoScaleMode = 'None'
+  if ($script:formIcon) { $dialog.Icon = $script:formIcon }
+  $stepLabel = New-Label '' 9 $true $script:colors.cyan
+  $stepLabel.Location = New-Object Drawing.Point(26,22); $dialog.Controls.Add($stepLabel)
+  $prompt = New-Label '' 20 $true $script:colors.text
+  $prompt.Location = New-Object Drawing.Point(24,50); $dialog.Controls.Add($prompt)
+  $lastLabel = New-Label 'LAST INPUT' 8 $true $script:colors.muted
+  $lastLabel.Location = New-Object Drawing.Point(26,124); $dialog.Controls.Add($lastLabel)
+  $last = New-Label 'Waiting for the controller...' 10 $false $script:colors.text
+  $last.UseMnemonic = $false
+  $last.AutoSize = $false; $last.Size = New-Object Drawing.Size(590,24); $last.AutoEllipsis = $true
+  $last.Location = New-Object Drawing.Point(26,146); $dialog.Controls.Add($last)
+  $message = New-Label 'Hold the controller and press each control as it is asked for. Keyboard keys are not read here.' 9 $false $script:colors.muted
+  $message.UseMnemonic = $false
+  $message.AutoSize = $false; $message.Size = New-Object Drawing.Size(590,44)
+  $message.Location = New-Object Drawing.Point(26,184); $dialog.Controls.Add($message)
+  $skip = New-Button 'SKIP' 110; $skip.Location = New-Object Drawing.Point(26,262); $dialog.Controls.Add($skip)
+  $cancel = New-Button 'CANCEL' 110; $cancel.Location = New-Object Drawing.Point(368,262); $dialog.Controls.Add($cancel)
+  $done = New-Button 'USE THESE' 140 $true; $done.Location = New-Object Drawing.Point(488,262); $dialog.Controls.Add($done)
+  $dialog.CancelButton = $cancel
+
+  $show = {
+    if ($state.Index -lt $steps.Count) {
+      $stepLabel.Text = ('CONTROL {0} OF {1}' -f ($state.Index + 1),$steps.Count)
+      $prompt.Text = $steps[$state.Index].Prompt
+    } else {
+      $stepLabel.Text = 'ALL CONTROLS ASKED'
+      $prompt.Text = 'Done. Choose USE THESE.'
+      $skip.Enabled = $false
+    }
+    if ($state.Message) { $message.Text = $state.Message }
+  }.GetNewClosure()
+
+  $probe = $null
+  try {
+    $probe = Start-Process -FilePath $script:nativePath -ArgumentList @('--list-pads') -WorkingDirectory $script:nativeRunDir `
+      -RedirectStandardOutput $logPath -RedirectStandardError ($logPath + '.err') -WindowStyle Hidden -PassThru
+  } catch {
+    [Windows.Forms.MessageBox]::Show(('The controller check could not start: {0}' -f $_.Exception.Message),'Controller binding','OK','Error') | Out-Null
+    return $null
+  }
+  $reader = @{ Stream = $null; Text = '' }
+  $timer = New-Object Windows.Forms.Timer; $timer.Interval = 50
+  $timer.Add_Tick({
+    try {
+      if (-not $reader.Stream) {
+        if (-not (Test-Path -LiteralPath $logPath)) { return }
+        $fs = New-Object IO.FileStream($logPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+        $reader.Stream = New-Object IO.StreamReader($fs)
+      }
+      $reader.Text += $reader.Stream.ReadToEnd()
+      while (($nl = $reader.Text.IndexOf("`n")) -ge 0) {
+        $line = $reader.Text.Substring(0,$nl).TrimEnd("`r"); $reader.Text = $reader.Text.Substring($nl + 1)
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        $source = ConvertFrom-PadProbeLine $line
+        if ($source) { $last.Text = $source } elseif ($line -like 'device*') { $last.Text = $line.Trim() }
+        [void](Step-PadBinding $state $line)
+        & $show
+      }
+    } catch {}
+    if ($probe.HasExited) { $timer.Stop(); $message.Text = 'The controller check stopped. Close this window and try again.' }
+  }.GetNewClosure())
+  $skip.Add_Click({ [void](Skip-PadBinding $state); & $show }.GetNewClosure())
+  $done.Add_Click({ $result.Bound = $state.Bound; $dialog.Close() }.GetNewClosure())
+  $cancel.Add_Click({ $dialog.Close() }.GetNewClosure())
+  & $show
+  try {
+    Set-UiScale $dialog
+    $timer.Start()
+    [void]$dialog.ShowDialog($script:form)
+  } finally {
+    $timer.Stop(); $timer.Dispose()
+    if ($reader.Stream) { $reader.Stream.Dispose() }
+    try { if (-not $probe.HasExited) { $probe.Kill() } } catch {}
+    $dialog.Dispose()
+  }
+  if ($result.Bound -and $result.Bound.Count) { return $result.Bound }
+  return $null
+}
+
 function Open-ControlsFile {
   $mapPath = [string]$script:settings.controls
   if (-not $mapPath) { $mapPath = Join-Path $script:appDir 'controls.txt' }
@@ -801,7 +903,7 @@ function Open-ControlsFile {
 
   $title = New-Label 'MAP YOUR CONTROLLER' 18 $true
   $title.Location = New-Object Drawing.Point(24,20); $dialog.Controls.Add($title)
-  $sub = New-Label 'Choose an action and a detected input. Map all controls needed on a custom device; keyboard defaults remain available.' 9 $false $script:colors.muted
+  $sub = New-Label 'BIND WITH PAD asks for each control in turn; or pick an action and a detected input. Keyboard defaults remain available.' 9 $false $script:colors.muted
   $sub.Location = New-Object Drawing.Point(26,54); $dialog.Controls.Add($sub)
   $targetLabel = New-Label 'GAMECUBE ACTION' 8 $true $script:colors.cyan
   $targetLabel.Location = New-Object Drawing.Point(26,100); $dialog.Controls.Add($targetLabel)
@@ -822,6 +924,8 @@ function Open-ControlsFile {
   $dialog.Controls.Add($detect)
   $reload = New-Button 'RELOAD LIST' 134; $reload.Location = New-Object Drawing.Point(188,284); $dialog.Controls.Add($reload)
   $add = New-Button 'ADD MAPPING' 152 $true; $add.Location = New-Object Drawing.Point(25,340); $dialog.Controls.Add($add)
+  # One press per control instead of detect, close, reload and pick.
+  $wizard = New-Button 'BIND WITH PAD' 167 $true; $wizard.Location = New-Object Drawing.Point(188,340); $dialog.Controls.Add($wizard)
   $hint = New-Label 'ACTIONS' 8 $true $script:colors.muted
   $hint.Location = New-Object Drawing.Point(26,401); $dialog.Controls.Add($hint)
   $hintText = New-Label "Buttons: A, B, X, Y, Z, L, R, start, D-pad`r`nMovement: stick and C-stick directions or axes" 9 $false $script:colors.text
@@ -880,6 +984,16 @@ function Open-ControlsFile {
     & $updateEmpty
   }.GetNewClosure())
   $remove.Add_Click({ if ($bindingList.SelectedIndex -ge 0) { $bindingList.Items.RemoveAt($bindingList.SelectedIndex) }; & $updateEmpty }.GetNewClosure())
+  $wizard.Add_Click({
+    $bound = Open-PadBindingWizard
+    if (-not $bound) { return }
+    $current = @($bindingList.Items | ForEach-Object { [string]$_ })
+    $merged = @(Merge-PadBindings $current $bound)
+    $bindingList.Items.Clear()
+    foreach ($line in $merged) { [void]$bindingList.Items.Add($line) }
+    & $updateEmpty
+    Set-Status ('{0} controls bound. Choose SAVE & USE to keep them.' -f $bound.Count) $true
+  }.GetNewClosure())
   $save.Add_Click({
     try {
       $output = New-Object 'System.Collections.Generic.List[string]'
