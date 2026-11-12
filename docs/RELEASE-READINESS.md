@@ -1,7 +1,8 @@
-# Release decision: experimental prerelease only
+# Release decision: experimental, published as Latest
 
-**2026-11-12: 0.2.0-rc.6 is published as an experimental prerelease; a gameplay release
-stays blocked.** rc.6 adds one-press controller binding (not yet tried with a physical
+**2026-11-12: 0.2.0-rc.6 is published, and since 2026-11-12 marked as the repository's Latest
+release at the owner's request; it is still experimental and a gameplay release stays
+blocked.** rc.6 adds one-press controller binding (not yet tried with a physical
 controller) to rc.5, which fixed the one gameplay crash that could be reproduced here: the
 native build crashed on a mission's third load (after retrying it twice). The fix was
 checked over five and then eight mission loads in scripted runs, the second from a fresh
