@@ -1,18 +1,23 @@
-# Release decision: blocked
+# Release decision: experimental prerelease only
 
-**Paused before fresh live validation, 2026-11-04.** The recorded boss failure is
-prevented by the combined arithmetic candidate in the diagnostic replay: the boss
-is visible and its tracked float fields remain finite at the after frame. See
-`VALIDATION.md` for hashes, frame alignment, baseline comparison and trace limits.
-This is not yet live boss completion or full-game validation. The pointer crash
-and later-mission gates remain open. No new public release or store submission.
+**2026-11-11: 0.2.0-rc.5 is published as an experimental prerelease; a gameplay release
+stays blocked.** rc.5 fixes the one gameplay crash that could be reproduced here: the
+native build crashed on a mission's third load (after retrying it twice). The fix was
+checked over five and then eight mission loads in scripted runs, the second from a fresh
+empty-cache build of the rc.5 package (see `VALIDATION.md`, "rc.5 package checks").
 
-Continuation on 2026-11-04 added WASD/mouse controls, tested CPU FPCC and integer
-translation corrections, invalid depth-plane rejection, and process-test fixes.
-See the dated entry in `VALIDATION.md` and `RELEASE-NOTES.md`. These are source
-improvements; neither original gameplay blocker is claimed fixed. Earlier package
-digests and smoke results below belong to the earlier candidate, not this changed
-runtime. Build and test the changed candidate separately before distribution.
+Still open, and why each needs a person or hardware rather than more scripted runs:
+
+- **Current-thread-pointer crash:** reported from play, never reproduced in any test run,
+  before or after the reload fix. It may have shared that cause (both put float bits where a
+  pointer belongs), but that is not established. Needs a crash bundle from a player.
+- **First-boss visibility:** the arithmetic fix prevents the recorded failure in a replay;
+  the scripted input cannot survive to the boss, so live confirmation needs a player.
+- **Mission completion, later missions, audio by ear, physical controllers, 100% and 150%
+  display scaling, and the launcher window's own Import & Build on a second PC.**
+
+The 2026-11-04 notes below describe earlier candidates; their digests and smoke results do
+not certify rc.5.
 
 Assessed 2026-11-03 against source baseline
 `d46e231a2494d201923b08898f52cf9753abb030` plus the host CI changes accompanying

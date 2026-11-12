@@ -5,7 +5,15 @@ native build crashed on the third load of a mission (after retrying it twice). A
 RecompLauncher support (with its `--play` mode fixed), faster launcher pages, an always-on
 session summary in each session's log for bug reports, and the housekeeping below.
 
-<!-- rc5-checks -->
+Checks on this package: archive extraction, per-file SHA-256, forbidden-content and asset
+allowlists, packaged PowerShell parsing, and the update install, rollback, traversal, hash,
+unknown-document and moved-`VALIDATION.md` tests. A fresh extract with an empty build cache
+built the game through RecompLauncher's `--prepare` mode (tools unpacked after SHA-256
+checks, SDL built from source, 7,690 functions recompiled, 104 compile steps, no errors), and
+that freshly built game then ran the scripted first mission for 25 minutes unpaced: eight
+mission loads, no crash. The tool archives were copied in from an earlier download rather
+than fetched again; SDL's source was fetched. The launcher window's own Import & Build was
+not used for this, and nothing was played by hand.
 
 Known issues: the first-boss visibility fix still needs live confirmation through the boss
 fight; the reported current-thread-pointer crash has not reproduced in any test run, before

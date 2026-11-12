@@ -208,6 +208,29 @@ compilation succeeded, and `git diff --check` passed; no gameplay or launcher GU
 | Full-game compatibility, mission completion and later missions | Not established |
 | First-boss visibility and invalid-current-thread-pointer crash | Unresolved |
 
+## rc.5 package checks — 2026-11-11
+
+The rc.5 candidate was packaged from commit `c5a61ab` (288 payload files) and passed archive
+creation, extraction, per-file SHA-256, forbidden-content, asset-allowlist and packaged
+PowerShell parser checks. The update install, rollback, path-traversal, hash-rejection,
+unknown-document and moved-`VALIDATION.md` tests passed against it. rc.4's own installer was
+run against it in a scratch folder and refused it as documented ("Package contains a path or
+file outside the update schema: recomplauncher.json"), leaving the folder unchanged.
+
+Empty-cache build: the candidate was extracted into a new folder with no build cache and the
+four pinned tool archives copied into its download folder (not fetched again). Its launcher
+exe's `--prepare --game <image>` mode unpacked each tool after its SHA-256 check, fetched and
+built SDL 2.30.9, recompiled 7,690 functions from the user's GF7E01 CISO and compiled 104
+steps in 2.4 minutes, with an empty stderr and a build record matching the new executable.
+That fresh executable then ran the scripted first-mission input unpaced for 25 minutes
+(about 220,000 frames): the mission module was linked eight times, with no fault, no call
+into a reused module and no thread-pointer guard report, and the last frames show the
+briefing, the Select Game menu, the mission and a cutscene rendering normally.
+
+The published package differs from that candidate only in documentation files carrying this
+evidence. Not run: the launcher window's Import & Build, an online tool download, play by a
+person, audio by ear, controllers.
+
 ## rc.4 package checks — 2026-11-05
 
 The rc.4 source package was built from the committed tree and passed archive creation,
@@ -276,6 +299,11 @@ prebuilt game executables, local settings, saves and build caches. Each recipien
 provides their own supported game image and builds locally.
 
 ## Validation log
+
+### 2026-11-11 — rc.5 candidate: empty-cache build and fresh-install run
+
+See "rc.5 package checks" above: a fresh extract built through `--prepare` with no build
+cache, and the resulting game passed eight mission loads in a scripted run.
 
 ### 2026-11-11 — module-reload crash: cause found and fixed
 
