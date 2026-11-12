@@ -208,6 +208,21 @@ compilation succeeded, and `git diff --check` passed; no gameplay or launcher GU
 | Full-game compatibility, mission completion and later missions | Not established |
 | First-boss visibility and invalid-current-thread-pointer crash | Unresolved |
 
+## rc.6 package checks — 2026-11-12
+
+The rc.6 candidate was packaged from commit `021b5fb` (288 payload files) and passed archive
+creation, extraction, per-file SHA-256, forbidden-content, asset-allowlist and packaged
+PowerShell parser checks, and the update install, rollback, path-traversal, hash-rejection,
+unknown-document and moved-`VALIDATION.md` tests. rc.5's published installer installed it in
+a scratch folder. A fresh extract with an empty build cache (the four tool archives copied in,
+not fetched) built through `--prepare` in 2.9 minutes: four tools unpacked after SHA-256
+checks, SDL built, 7,690 functions recompiled, empty stderr, build record matching the
+executable. That build ran the scripted first mission unpaced for 15 minutes with five
+mission loads and no fault, no call into a reused module and no guard report. The published
+package differs from the candidate in these documents and in the launcher exe's bytes
+(rebuilt from unchanged source); the published exe was checked separately. Not checked: the
+one-press binding with a physical controller, play by a person.
+
 ## rc.5 package checks — 2026-11-11
 
 The rc.5 candidate was packaged from commit `c5a61ab` (288 payload files) and passed archive

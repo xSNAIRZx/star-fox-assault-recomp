@@ -5,7 +5,14 @@ and counts RecompLauncher sessions in play time; the gameplay fixes and known is
 rc.5's (below). Updating from rc.5 with Install Local ZIP works; from rc.4 or earlier, extract
 rc.6 into a fresh folder and copy your old `user-data` folder into it.
 
-<!-- rc6-checks -->
+Checks on this package: archive extraction, per-file SHA-256, forbidden-content and asset
+allowlists, packaged PowerShell parsing and the update install, rollback, traversal, hash,
+unknown-document and moved-`VALIDATION.md` tests; rc.5's own installer installs it. A fresh
+extract with an empty build cache built the game through `--prepare` (tools unpacked after
+SHA-256 checks, SDL from source, 7,690 functions, no errors) and that build ran the scripted
+first mission unpaced for 15 minutes: five mission loads, no crash. The tool archives were
+copied from an earlier download. Not checked: the controller binding with a physical
+controller, play by a person.
 
 ## 2026-11-11 after rc.5
 
