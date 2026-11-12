@@ -30,7 +30,8 @@
   "exit_codes": {
     "3": "The game hasn't been built from your disc yet. Run its setup again on the game's page.",
     "4": "The game was built from a different copy of the disc. Run its setup again on the game's page.",
-    "5": "It couldn't find your copy of the game. Pick it again on the game's page."
+    "5": "It couldn't find your copy of the game. Pick it again on the game's page.",
+    "6": "The game is already running, from here or from Peregrine Forge. Close it first, then start it again."
   },
   "looks": {
     "allowed": false,

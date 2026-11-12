@@ -5,6 +5,15 @@
   third load the native build kept using the previous attempt's freed memory and crashed
   shortly after the mission started. Checked with a scripted 40-minute run that loads the
   first mission five times: no crash, and the later attempts play normally.
+- **RecompLauncher fixes:** `--play` refused every start as "built from a different copy":
+  it compared the image's write time through a floating-point number, which cannot hold the
+  60-bit value exactly. It now reads it as an exact integer and starts the game. `--play` also
+  refuses to start a second copy while the game is running (exit code 6, explained in
+  `recomplauncher.json`), since two copies would write the same memory card, and prunes old
+  session logs the way the Peregrine Forge launcher does.
+- The replacement system fonts are pinned to their upstream source: byte-identical to Dolphin's
+  `Data/Sys/GC` files at commit `0f1ce0e1f42a`, recorded with their SHA-256 in
+  `THIRD_PARTY_NOTICES.md`.
 - `GCN_REL_TRACE=1` prints every code-module load the runtime sees and reports a module that
   is still running after its memory was reused (for diagnosing similar reports).
 

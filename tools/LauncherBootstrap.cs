@@ -120,6 +120,7 @@ internal static class RecompLauncherMode
     private const int ExitNotBuilt = 3;
     private const int ExitOtherCopy = 4;
     private const int ExitMissing = 5;
+    private const int ExitAlreadyRunning = 6;
     private const string GameId = "GF7E01";
 
     private static IntPtr killOnCloseJob = IntPtr.Zero;
@@ -202,10 +203,17 @@ internal static class RecompLauncherMode
             Console.Error.WriteLine("This build was made from a different copy of the game.");
             return ExitOtherCopy;
         }
+        // Two copies would write the same memory card; the Peregrine Forge launcher refuses too.
+        if (NativeGameRunning(exe))
+        {
+            Console.Error.WriteLine("The game is already running. Close it first.");
+            return ExitAlreadyRunning;
+        }
 
         string runDir = Path.Combine(project, "user-data\\native-run");
         string logsDir = Path.Combine(runDir, "logs");
         Directory.CreateDirectory(logsDir);
+        RemoveOldSessionLogs(logsDir);
         string session = "native-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N").Substring(0, 6);
 
         List<string> gameArgs = new List<string>(rest);
@@ -347,8 +355,10 @@ internal static class RecompLauncherMode
             string recordedHash = JsonString(json, "executable_sha256");
             if (JsonNumber(json, "schema_version", 0) < 2 || recordedImage == null || recordedHash == null) { return false; }
             if (!string.Equals(Path.GetFullPath(recordedImage), info.FullName, StringComparison.OrdinalIgnoreCase)) { return false; }
-            if ((long)JsonNumber(json, "image_size", -1) != info.Length) { return false; }
-            if ((long)JsonNumber(json, "image_modified_utc_ticks", -1) != info.LastWriteTimeUtc.Ticks) { return false; }
+            // Read as exact 64-bit integers: file times in ticks need 60 bits, more than a
+            // double holds, so a double compare almost never matched.
+            if (JsonLong(json, "image_size", -1) != info.Length) { return false; }
+            if (JsonLong(json, "image_modified_utc_ticks", -1) != info.LastWriteTimeUtc.Ticks) { return false; }
             if (JsonString(json, "game_id") != GameId) { return false; }
             using (FileStream stream = File.OpenRead(exe))
             using (SHA256 sha = SHA256.Create())
@@ -360,11 +370,83 @@ internal static class RecompLauncherMode
         catch (Exception) { return false; }
     }
 
+    // The same rule as Remove-OldSessionLogs in Launch-StarFoxAssault.ps1, so playing only from
+    // RecompLauncher does not grow the logs folder without bound: keep the newest 20 sessions
+    // plus up to 20 older ones whose error log has a guard, vertex-check, thread-watch or fatal
+    // line, and delete the rest (each session is native-<stamp>-<id>.log/.err/.ram.bin).
+    private const int SessionLogKeep = 20;
+    private static readonly Regex FlaggedLine = new Regex(@"\[guard\]|\[vertcheck\]|\[thread-watch\]|fatal", RegexOptions.Compiled);
+
+    private static void RemoveOldSessionLogs(string logsDir)
+    {
+        try
+        {
+            SortedDictionary<string, List<string>> sessions = new SortedDictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (string file in Directory.GetFiles(logsDir, "native-*"))
+            {
+                string name = Path.GetFileName(file);
+                string key = Regex.Replace(name, @"\.(log|err|ram\.bin)$", "");
+                List<string> group;
+                if (!sessions.TryGetValue(key, out group)) { group = new List<string>(); sessions[key] = group; }
+                group.Add(file);
+            }
+            if (sessions.Count <= SessionLogKeep) { return; }
+            List<string> keys = new List<string>(sessions.Keys);
+            keys.Reverse();  // newest first: names start with a sortable stamp
+            int flaggedKept = 0;
+            for (int i = SessionLogKeep; i < keys.Count; i++)
+            {
+                List<string> group = sessions[keys[i]];
+                string err = group.Find(delegate(string f) { return f.EndsWith(".err", StringComparison.OrdinalIgnoreCase); });
+                bool flagged = false;
+                if (err != null)
+                {
+                    try
+                    {
+                        foreach (string line in File.ReadLines(err)) { if (FlaggedLine.IsMatch(line)) { flagged = true; break; } }
+                    }
+                    catch (Exception) { }
+                }
+                if (flagged && flaggedKept < SessionLogKeep) { flaggedKept++; continue; }
+                foreach (string file in group) { try { File.Delete(file); } catch (Exception) { } }
+            }
+        }
+        catch (Exception) { }
+    }
+
+    // The same rule as Get-NativeGameProcess in tools/LauncherNative.ps1: an assault.exe at this
+    // path counts, and so does one whose path cannot be read (an elevated copy, say), so the
+    // card is never shared with a running game; an unrelated program of that name does not.
+    private static bool NativeGameRunning(string exe)
+    {
+        string target = Path.GetFullPath(exe);
+        foreach (Process process in Process.GetProcessesByName("assault"))
+        {
+            using (process)
+            {
+                string path = null;
+                try { path = process.MainModule.FileName; } catch (Exception) { }
+                if (string.IsNullOrEmpty(path)) { return true; }
+                try { if (string.Equals(Path.GetFullPath(path), target, StringComparison.OrdinalIgnoreCase)) { return true; } }
+                catch (Exception) { return true; }
+            }
+        }
+        return false;
+    }
+
     // The build files are flat JSON written by ConvertTo-Json, so a field can be read by name.
     private static string JsonString(string json, string name)
     {
         Match match = Regex.Match(json, "\"" + Regex.Escape(name) + "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
         return match.Success ? Regex.Unescape(match.Groups[1].Value) : null;
+    }
+
+    private static long JsonLong(string json, string name, long fallback)
+    {
+        Match match = Regex.Match(json, "\"" + Regex.Escape(name) + "\"\\s*:\\s*(-?[0-9]+)(?![0-9.eE])");
+        long value;
+        if (match.Success && long.TryParse(match.Groups[1].Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out value)) { return value; }
+        return fallback;
     }
 
     private static double JsonNumber(string json, string name, double fallback)

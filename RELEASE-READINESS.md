@@ -89,8 +89,8 @@ replacement fonts, launcher and image inspector. Never upload the game image,
 extracted DOL/REL, generated PPC code, native game executable, RAM, cards, input
 recordings, private paths or tool caches. Do not use `-IncludeNativePrototype` for
 public artifacts. Keep upstream MIT, SDL zlib, font Apache/OFL and GLAD notices.
-The font notice records installed-Dolphin provenance; a pinned upstream provenance
-record for those exact replacement font bytes is still desirable. This audit is
+The font notice pins those exact replacement font bytes to a Dolphin upstream
+commit with their SHA-256 (checked 2026-11-11). This audit is
 an inventory and packaging boundary, not a legal clearance for game trademarks.
 
 ## RecompStore submission preparation (not submitted)

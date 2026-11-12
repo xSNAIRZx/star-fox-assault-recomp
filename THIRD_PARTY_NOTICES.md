@@ -9,6 +9,7 @@
 ## Replacement GameCube system fonts
 - Files: `assets/fonts/font_western.bin`, `assets/fonts/font_japanese.bin`.
 - Source: the user's installed Dolphin distribution (`Sys/GC`); generated replacement fonts, not Nintendo IPL ROM dumps.
+- Pinned upstream: byte-identical to `Data/Sys/GC/font_western.bin` and `font_japanese.bin` in <https://github.com/dolphin-emu/dolphin> at commit `0f1ce0e1f42ae6f149405778457116abba87af72` (the last commit to change them, 2016-12-26). SHA-256: `4ad991be2b0aa305f09b90a79fc50f57833b30b008890b5ef1336cc3d9d0bae0` (western, 6,478 bytes) and `38f9f59d505bc4e2d86b0196706195f33ad72b7fe9d029cf263072cde19d044f` (Japanese, 259,626 bytes). `font-licenses.txt` matches that commit's copy apart from CRLF line endings. Checked 2026-11-11.
 - Based on Droid Sans. Copyright 2006–2014 Google Corporation. Licensed under the Apache License, Version 2.0.
 - The distribution's attribution and complete license are retained in `assets/fonts/font-licenses.txt`.
 - The runtime independently serves these font bytes through its EXI ROM interface; no Dolphin emulator source code is included by this integration.

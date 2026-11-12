@@ -68,7 +68,7 @@ Main weak spots: every control is placed with absolute coordinates (now in 96-DP
 - [x] Fix the old-updater dead end (older updaters reject new doc paths): skip unknown docs instead of failing, or show a one-time migration note. This installer now skips unknown documentation (still hash-checked) and accepts `docs/`; installers already shipped keep the old rule, so layout changes wait until rc.4 ships it.
 - [x] Add a GitHub bug-report form with the roadmap's fields.
 - [ ] Tidy the repo root: move `README-PROTOTYPE.txt`, `RELEASE-READINESS.md` and `VALIDATION.md` under `docs/`, updating the package and updater allowlists. Staged because the installers already shipped decide what an update may contain: rc.2-rc.4 require `VALIDATION.md` and `README-PROTOTYPE.txt` at the root, and rc.2/rc.3 reject any `docs/` path. Step 1 (2026-11-07): this installer accepts `VALIDATION.md` at either place. Step 2, after a release ships that installer: move `VALIDATION.md` and `RELEASE-READINESS.md`, and update the package document list and links. Keep `README-PROTOTYPE.txt` at the root (it is the first file a player opens after extracting). An update does not delete the old root copies.
-- [ ] Record a pinned upstream source for the replacement font bytes in `THIRD_PARTY_NOTICES.md`.
+- [x] Record a pinned upstream source for the replacement font bytes in `THIRD_PARTY_NOTICES.md`. Done 2026-11-11: both files are byte-identical to dolphin-emu/dolphin `Data/Sys/GC` at commit `0f1ce0e1f42a`, with their SHA-256 recorded.
 
 ## Suggested order
 
