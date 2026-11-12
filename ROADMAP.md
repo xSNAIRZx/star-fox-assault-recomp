@@ -36,9 +36,10 @@ them using the `[ram] frame ... (presented ...)` line rather than assuming equal
 - [ ] Capture the guard line and RAM dump from a normal-speed run that reaches the current-thread
       failure, and identify the store that writes the invalid word. A 60,000-frame unpaced diagnostic run
       (2026-11-05, with `GCN_THREAD_WATCH_BAD=1`) did not reproduce it.
-- [ ] Explain the module-reload fault from the same run: module 12 callbacks still ran after another module
-      was linked over its `.bss` (VALIDATION.md, 2026-11-05). Log module load/free order per frame and
-      compare paced and unpaced runs before changing behavior.
+- [x] Explain the module-reload fault from the same run: module 12 callbacks still ran after another module
+      was linked over its `.bss` (VALIDATION.md, 2026-11-05). Fixed 2026-11-11: a module linked again at an
+      earlier copy's header kept the earlier section bases; the runtime now re-reads them. Checked over five
+      mission loads (VALIDATION.md, 2026-11-11).
 - [ ] Complete the first mission at normal speed, including the boss, transition and save/reload, without the reported failures.
 
 **Evidence so far:** the saved trace resolves to `0x80136C60` inside `fn_80136C44`, with the

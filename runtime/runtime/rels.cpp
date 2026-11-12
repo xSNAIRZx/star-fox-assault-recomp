@@ -23,9 +23,15 @@
 #include <cstring>
 #include <string>
 
+#include <utility>
+#include <vector>
+
+#include "guest_stack.h"
 #include "platform.h"
 #include "recomp.h"
 #include "runtime.h"
+
+uint32_t gx_frames_submitted();
 
 uint32_t g_rel_base[REL_MAX_MODULES * REL_MAX_SECTIONS];
 
@@ -180,7 +186,95 @@ std::string module_name(uint32_t info) {
     return path.empty() ? std::string(buf) : path;
 }
 
+// GCN_REL_TRACE=1: a record of every link, for finding a module that is still being called
+// after the game reused its memory. A game whose linker the runtime cannot hook (no named
+// OSLink/OSUnlink) frees and reallocates module memory without telling it; this notices
+// when a later link lands on an earlier module's sections, and reports the first call into
+// that earlier module afterwards, with the guest stack. Diagnostics only.
+struct TraceLink {
+    std::string name;
+    uint32_t info = 0, frame = 0;
+    std::vector<std::pair<uint32_t, uint32_t>> ranges;  // [base, base + size) of every section
+    std::string reused_by;
+    uint32_t reused_frame = 0, reused_at = 0;
+    bool reported = false;
+};
+std::vector<TraceLink> g_trace;
+int g_trace_on = -1;
+
+bool trace_enabled() {
+    if (g_trace_on < 0) {
+        const char* v = getenv("GCN_REL_TRACE");
+        g_trace_on = (v && *v && *v != '0') ? 1 : 0;
+    }
+    return g_trace_on == 1;
+}
+
+void trace_link(uint32_t info, const char* name) {
+    TraceLink link;
+    link.name = name;
+    link.info = info;
+    link.frame = (uint32_t)gx_frames_submitted();
+    const uint32_t count = LD32(info + 0x0C);
+    uint32_t table = LD32(info + 0x10);
+    if (table < 0x80000000u) table += info;
+    for (uint32_t i = 0; i < count && i < REL_MAX_SECTIONS; i++) {
+        const uint32_t base = LD32(table + i * 8) & ~1u, size = LD32(table + i * 8 + 4);
+        if (base >= 0x80000000u && size) link.ranges.push_back({base, size});
+    }
+    for (TraceLink& old : g_trace) {
+        if (!old.reused_by.empty()) continue;
+        for (const auto& a : old.ranges) {
+            for (const auto& b : link.ranges) {
+                if ((uint64_t)a.first < (uint64_t)b.first + b.second && (uint64_t)b.first < (uint64_t)a.first + a.second) {
+                    old.reused_by = link.name;
+                    old.reused_frame = link.frame;
+                    old.reused_at = std::max(a.first, b.first);
+                    break;
+                }
+            }
+            if (!old.reused_by.empty()) break;
+        }
+        if (!old.reused_by.empty())
+            fprintf(stderr, "[rels] frame %u: %s (header %08X) reuses memory of %s linked at frame %u (header %08X), first at %08X\n",
+                    link.frame, link.name.c_str(), info, old.name.c_str(), old.frame, old.info, old.reused_at);
+    }
+    std::string secs;
+    char buf[32];
+    for (const auto& r : link.ranges) { snprintf(buf, sizeof buf, " %08X+%X", r.first, r.second); secs += buf; }
+    fprintf(stderr, "[rels] frame %u: linked %s at %08X, sections%s\n", link.frame, name, info, secs.c_str());
+    g_trace.push_back(std::move(link));
+}
+
 }  // namespace
+
+// Called by call_indirect after it dispatched addr through a module mapping, only while
+// GCN_REL_TRACE is set: reports the first call into each module copy whose memory a later
+// link reused.
+void rels_trace_call(uint32_t addr, uint32_t lr, uint32_t sp) {
+    if (!trace_enabled()) return;
+    int n = g_live_count.load(std::memory_order_acquire);
+    uint32_t info = 0;
+    for (int i = 0; i < n; i++)
+        if (g_live[i].size && addr - g_live[i].base < g_live[i].size) { info = g_live[i].info; break; }
+    if (!info) return;
+    TraceLink* link = nullptr;
+    for (TraceLink& t : g_trace)
+        if (t.info == info) link = &t;  // the latest link at this header
+    if (!link || link->reused_by.empty() || link->reported) return;
+    link->reported = true;
+    uint32_t frames[12];
+    const size_t depth = gcn_walk_guest_stack(sp, [](void*, uint32_t ea, uint32_t* out) {
+        if (!gcn_guest_ram_holds(ea) || (ea & 3)) return false;
+        *out = LD32(ea);
+        return true;
+    }, nullptr, frames, 12);
+    char stack[160];
+    const char* chain = gcn_stack_text(frames, depth, stack, sizeof stack);
+    fprintf(stderr, "[rels] frame %u: call into %s at %08X (lr %08X) after %s reused its memory at frame %u\n",
+            (unsigned)gx_frames_submitted(), link->name.c_str(), addr, lr, link->reused_by.c_str(), link->reused_frame);
+    if (chain) fprintf(stderr, "[rels]   live guest stack: %s\n", chain);
+}
 
 // Before a link: a module that was not recompiled is one the game assembled in memory.
 // GCN_REL_DUMP=<dir> writes it there as <name>.rel, exactly as OSLink is about to see it,
@@ -263,6 +357,7 @@ void rels_linked(uint32_t info) {
                           g_rel_base[k * REL_MAX_SECTIONS + m.sections[i].index]);
         LOG(LOG_OS, "OSLink: %s (module %u) at %08X, sections%s\n", m.name, id, info, secs);
     }
+    if (trace_enabled()) trace_link(info, m.name);
 }
 
 void rels_unlinked(uint32_t info) {
@@ -284,12 +379,43 @@ uint32_t rels_section_address(uint32_t module_id, uint32_t section) {
     return 0;
 }
 
+// The section bases the module's code computes its data addresses from (g_rel_base) are one
+// set per compiled module, written by the last rels_linked. A game whose linker the runtime
+// cannot hook can unlink a module and link it again -- at the header of an earlier copy whose
+// mapping is still live, with its .bss somewhere new. A call into that copy then resolves
+// through the old mapping without anything re-reading the header, and the code reads and
+// writes the previous copy's freed sections. So when a call resolves through a mapping whose
+// header is linked (absolute section bases) and those bases are not the ones in use,
+// register the link again.
+static void refresh_if_relinked(const Live& live) {
+    const uint32_t info = live.info;
+    uint32_t table = LD32(info + 0x10);
+    if (table < 0x80000000u) table += info;
+    const RecompRel& m = g_recomp_rels[live.module];
+    // The section this mapping is for: a file offset there means the header has been
+    // restored for unlinking, and the bases in use stay as they are.
+    if ((LD32(table + live.section * 8) & ~1u) < 0x80000000u) return;
+    for (uint32_t i = 0; i < m.count; i++) {
+        const RecompRelSection& s = m.sections[i];
+        const uint32_t base = LD32(table + s.index * 8) & ~1u;
+        if (!LD32(table + s.index * 8 + 4) || base < 0x80000000u) continue;  // empty or unplaced
+        if (base != g_rel_base[live.module * REL_MAX_SECTIONS + s.index]) {
+            rels_linked(info);
+            return;
+        }
+    }
+}
+
 uint32_t rels_canon(uint32_t a) {
     int n = g_live_count.load(std::memory_order_acquire);
     for (int i = 0; i < n; i++) {
         const Live& l = g_live[i];
         if (a - l.base < l.size) {
-            if (live_matches(l)) return l.canon + (a - l.base);
+            if (live_matches(l)) {
+                const Live found = l;  // rels_linked may rewrite this slot
+                refresh_if_relinked(found);
+                return found.canon + (a - found.base);
+            }
             g_live[i].size = 0;
         }
     }

@@ -11,6 +11,9 @@ $ErrorActionPreference='Stop'
 $project=[IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $GameImage=[IO.Path]::GetFullPath($GameImage)
 if(-not $BuildDirectory){$BuildDirectory=Join-Path $project 'user-data\build-cache\llvm-x64'}
+# A relative folder is relative to the project, not to whatever directory the calling process
+# happens to run in (which would put a second build cache, generated code included, there).
+if(-not [IO.Path]::IsPathRooted($BuildDirectory)){$BuildDirectory=Join-Path $project $BuildDirectory}
 $BuildDirectory=[IO.Path]::GetFullPath($BuildDirectory)
 $executable=Join-Path $project 'build-desktop\Release\assault.exe'
 $oldPath=$env:PATH

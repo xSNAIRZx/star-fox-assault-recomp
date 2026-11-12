@@ -1,3 +1,13 @@
+# Unreleased — 2026-11-11 mission-retry crash fixed
+
+- **Fixed a crash on the third load of a mission** (for example after losing all lives twice
+  and retrying). The game loads each mission's code module again on every attempt; on the
+  third load the native build kept using the previous attempt's freed memory and crashed
+  shortly after the mission started. Checked with a scripted 40-minute run that loads the
+  first mission five times: no crash, and the later attempts play normally.
+- `GCN_REL_TRACE=1` prints every code-module load the runtime sees and reports a module that
+  is still running after its memory was reused (for diagnosing similar reports).
+
 # Unreleased — RecompLauncher support
 
 - Packages carry `recomplauncher.json` at the top, so [RecompLauncher](https://recomplauncher.com)

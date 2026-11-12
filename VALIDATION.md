@@ -268,14 +268,43 @@ user data.
   fidelity and all physical controllers remain unverified.
 - The reported first-boss visibility issue and invalid-current-thread-pointer crash
   remain unresolved. Widescreen remains experimental.
-- A module-reload fault (stale module callbacks reading reused memory) ended a 60,000-frame
-  unpaced attract-loop run on 2026-11-05; see the validation log.
+- The module-reload crash on a mission's third load (found 2026-11-05) is fixed and checked
+  over five mission loads; see the validation log (2026-11-11).
 
 The package excludes game images, extracted DOL/REL files, generated game code,
 prebuilt game executables, local settings, saves and build caches. Each recipient
 provides their own supported game image and builds locally.
 
 ## Validation log
+
+### 2026-11-11 — module-reload crash: cause found and fixed
+
+The fault recorded on 2026-11-05 reproduced exactly (same address, `03DB27AE`) on a fresh
+build, running the scripted first-mission input unpaced. That input plays the mission, loses
+every life, sits through the game-over briefing and retries, so each retry links the mission
+module (`m9.rel`) again. The crash came on the mission's **third** load, which any player who
+retries a mission twice would reach.
+
+`GCN_REL_TRACE=1` (new, diagnostics only) showed why. This game links and unlinks its modules
+through SDK functions the recompiler cannot name, so the runtime learns of a link only on the
+first call into an address it has no mapping for. The third load put `m9` back at the header
+address of the first load, whose mapping was still live, with its `.bss` somewhere new. Calls
+resolved through that old mapping, the section bases were never re-read, and the module ran
+on the second load's freed `.bss`, which the menu module had since been loaded over. The SDK
+module list in the crash RAM confirmed it: one `m9` linked, at the first load's header, with
+the new `.bss`.
+
+Fix (runtime `rels.cpp`): when a call resolves through a module mapping whose header is
+linked and its section bases differ from the ones in use, the link is registered again. The
+REL rebinding test reproduces the sequence and fails without the fix
+(`relinked copy kept the previous copy's data section`). Result on the same scripted run:
+40 minutes unpaced, about 146,000 frames, `m9` linked five times, no fault, no call into a
+reused module, no thread-pointer guard report; the frames after the old crash point show the
+mission playing normally. Not checked: the same at normal speed with a person playing.
+
+Whether this was also behind the current-thread-pointer crash is not established. Both put
+float bits where a pointer belongs, and a module running on reused memory writes as well as
+reads, but no run so far has reproduced the thread-pointer failure, before or after the fix.
 
 ### 2026-11-05 — 60,000-frame thread-watch run; new module-reload fault
 

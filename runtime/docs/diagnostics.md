@@ -712,6 +712,17 @@ headset app starts its activity again in a new process, and the harness and the 
 exit 0. `GCN_RESET_AFTER=<seconds>` makes a reset happen that far into guest time, for
 trying a frontend's restart without playing to one.
 
+## Relocatable modules
+
+`GCN_REL_TRACE=1` prints a `[rels]` line for every module link the runtime registers (the
+presented frame, the header and every section's base and size), a line when a new link lands
+on an earlier link's sections (`... reuses memory of ...`), and the first call into each
+module copy after its memory was reused, with the caller and the guest stack. That last line
+is the one to look for when a game reads or writes garbage after loading another level: it
+names a module whose code is still being run over memory that now belongs to something else.
+`--log=os` prints the link lines only. Diagnostics only; nothing changes what the game does.
+See [rels.md](rels.md) for how links are registered.
+
 ## The guest heap
 
 The SDK's OSAlloc keeps no record of who owns a cell, so when a game panics on a failed

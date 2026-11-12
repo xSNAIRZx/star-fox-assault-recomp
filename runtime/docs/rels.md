@@ -73,3 +73,15 @@ in guest memory as the game linked it. `--log=os` prints each registered module.
 
 Nothing checks that a module's code is only entered while it is linked; the game cannot
 do otherwise on the console either.
+
+A module's code finds its own data through `g_rel_base`, which holds one set of section
+bases per compiled module: the last link registered. Without the hooks, a game can unlink a
+module and link it again -- at the header of an earlier copy whose mapping is still live,
+with its `.bss` somewhere new -- and the first call into the new link resolves through that
+earlier mapping, so nothing re-reads the header. The code would then use the previous
+copy's freed sections, which by then belong to whatever was loaded next. So `rels_canon`
+compares the header's section bases with `g_rel_base` whenever a call resolves through a
+mapping, and registers the link again when they differ. A header restored to file offsets
+(an unlink in progress, running the module's epilog) leaves the bases as they are.
+`GCN_REL_TRACE=1` ([diagnostics.md](diagnostics.md)) shows links, reuse and calls into reused
+copies.

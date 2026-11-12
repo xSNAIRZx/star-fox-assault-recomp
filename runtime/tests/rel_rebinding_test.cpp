@@ -65,6 +65,35 @@ void set_module(uint32_t info, uint32_t table, uint32_t id, const char* name, ui
     put_be32(table + 12, kSectionSize);
 }
 
+constexpr uint32_t kInfoRelinkA = 0x81600000;
+constexpr uint32_t kInfoRelinkB = 0x81620000;
+constexpr uint32_t kTableRelinkA = 0x81600080;
+constexpr uint32_t kTableRelinkB = 0x81620080;
+constexpr uint32_t kRelinkTextA = 0x81600100;
+constexpr uint32_t kRelinkTextB = 0x81620100;
+constexpr uint32_t kRelinkDataA = 0x81500000;
+constexpr uint32_t kRelinkDataB = 0x81510000;
+constexpr uint32_t kRelinkDataC = 0x81520000;
+constexpr uint32_t kRelinkCanon = 0x81845420;
+
+// A linked module with code in section 1 and data in section 2 (as a .bss would be).
+void set_relinkable(uint32_t info, uint32_t table, uint32_t text, uint32_t data) {
+    const uint32_t name_length = append_string(128, "relink.rel");
+    put_be32(info, 8);
+    put_be32(info + 4, 0);
+    put_be32(info + 8, 0);
+    put_be32(info + 0x0C, 3);
+    put_be32(info + 0x10, table);
+    put_be32(info + 0x14, 128);
+    put_be32(info + 0x18, name_length);
+    put_be32(table, 0);
+    put_be32(table + 4, 0);
+    put_be32(table + 8, text | 1u);
+    put_be32(table + 12, kSectionSize);
+    put_be32(table + 16, data);
+    put_be32(table + 20, 0x100);
+}
+
 void require(bool condition, const char* message) {
     if (!condition) fail(message);
 }
@@ -78,6 +107,7 @@ const RecompRel g_recomp_rels[] = {
     {6, "old.rel", 1, {{1, kOldCanon, kSectionSize, 1}}},
     {6, "new.rel", 1, {{1, kNewCanon, kSectionSize, 1}}},
     {7, "overlap.rel", 1, {{1, kOverlapCanon, kSectionSize, 1}}},
+    {8, "relink.rel", 2, {{1, kRelinkCanon, kSectionSize, 1}, {2, 0, 0x100, 0}}},
 };
 const uint32_t g_recomp_rel_count = static_cast<uint32_t>(sizeof(g_recomp_rels) / sizeof(g_recomp_rels[0]));
 
@@ -91,6 +121,8 @@ void log_msg(LogCat, const char*, ...) {}
 [[noreturn]] void fatal(const char*, ...) { std::abort(); }
 
 [[noreturn]] void plat_exit_now(int code) { std::exit(code); }
+
+uint32_t gx_frames_submitted() { return 0; }
 
 int main() {
     try {
@@ -141,6 +173,31 @@ int main() {
         rels_linked(kInfoOverlapB);
         require(rels_canon(overlap_target) == kOverlapCanon + 0x40,
                 "new overlapping module did not replace the old range");
+
+        // A linker the runtime cannot hook links a module, links a second copy elsewhere,
+        // unlinks that, and links the module again at the first copy's header with its data
+        // section somewhere new. The first call into the new link resolves through the first
+        // copy's mapping, which still matches; the section bases the code uses must follow
+        // the header to the new data section, not stay on the second copy's freed one.
+        put_be32(0x800030C8, 0);
+        set_relinkable(kInfoRelinkA, kTableRelinkA, kRelinkTextA, kRelinkDataA);
+        rels_linked(kInfoRelinkA);
+        set_relinkable(kInfoRelinkB, kTableRelinkB, kRelinkTextB, kRelinkDataB);
+        rels_linked(kInfoRelinkB);
+        require(rels_section_address(8, 2) == kRelinkDataB, "second copy's data section not in use");
+        put_be32(kTableRelinkB + 8, 0xD5);  // second copy unlinked: file offsets again
+        put_be32(kTableRelinkB + 16, 0x200);
+        set_relinkable(kInfoRelinkA, kTableRelinkA, kRelinkTextA, kRelinkDataC);  // relinked, new data
+        const uint32_t relink_target = kRelinkTextA + 0x20;
+        require(rels_canon(relink_target) == kRelinkCanon + 0x20, "relinked copy did not resolve");
+        require(rels_section_address(8, 2) == kRelinkDataC,
+                "relinked copy kept the previous copy's data section");
+
+        // While the header is restored to file offsets for unlinking, the bases in use stay.
+        put_be32(kTableRelinkA + 8, 0xD5);
+        put_be32(kTableRelinkA + 16, 0x200);
+        require(rels_canon(relink_target) == kRelinkCanon + 0x20, "unlinking copy rejected during its epilog");
+        require(rels_section_address(8, 2) == kRelinkDataC, "unlinking header changed the bases in use");
     } catch (const std::exception& error) {
         std::fprintf(stderr, "rel_rebinding_test: %s\n", error.what());
         return 1;

@@ -161,7 +161,7 @@ extern "C" void call_indirect(CPU* c, uint32_t addr) {
         if (canon == addr || !fn_lookup(canon)) {
             if (rels_bind(addr)) canon = rels_canon(addr);
         }
-        if (canon != addr && (fn = fn_lookup(canon))) { fn(c); return; }
+        if (canon != addr && (fn = fn_lookup(canon))) { rels_trace_call(addr, c->lr, c->r[1]); fn(c); return; }
     }
     // GCN_RAM_DUMP=<path>: the guest RAM at this failure, for finding out what the code at
     // `addr` is and where it came from.
